@@ -1,0 +1,37 @@
+# Python virtual environment
+venv/
+env/
+.env/
+.venv/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Data directories
+/data/
+/artifacts/
+
+# Keep documentation images
+!docs/images/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Logs and databases
+*.log
+*.sqlite
+
+# OS specific files
+.DS_Store
+Thumbs.db 
