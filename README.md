@@ -65,10 +65,26 @@ pip install -r requirements.txt
 1. Place your performance data in the `data/` directory following the expected format:
 ```
 data/
-  ├── model_name_provider_instance/
-  │   └── model_name_concurrencyN/
-  │       └── token_config.json
+├── meta_llama-3.1-8b_aws_p5.48xlarge_h100/              # Model with cloud provider and instance
+│   ├── meta_llama-3.1-8b-instruct-openai-chat-concurrency1/
+│   │   ├── 200_200_genai_perf.json    # Input 200, Output 200 tokens
+│   │   ├── 200_5_genai_perf.json      # Input 200, Output 5 tokens
+│   │   └── 1000_200_genai_perf.json   # Input 1000, Output 200 tokens
+│   ├── meta_llama-3.1-8b-instruct-openai-chat-concurrency2/
+│   │   ├── 200_200_genai_perf.json
+│   │   └── ...
+│   └── meta_llama-3.1-8b-instruct-openai-chat-concurrency5/
+│       └── ...
+└── meta_llama-3.1-8b_aws_g5.12xlarge_a10/              # Same model, different hardware
+    └── meta_llama-3.1-8b-instruct-openai-chat-concurrency1/
+        └── ...
+
 ```
+
+Directory naming convention:
+- Top level: `{model_name}_{cloud_provider}_{instance_type}_{gpu_type}`
+- Test runs: `{model_name}-{api_type}-concurrency{N}`
+- Results: `{input_tokens}_{output_tokens}_genai_perf.json`
 
 2. Run the Streamlit application:
 ```bash
