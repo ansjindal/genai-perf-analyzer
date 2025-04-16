@@ -41,6 +41,36 @@ def format_concurrency(model_info) -> str:
         return "Concurrency: Unknown"
     return f"Concurrency: {model_info.concurrency}"
 
+def display_model_details(model_info):
+    """Display detailed model configuration in the sidebar."""
+    st.sidebar.markdown("### Model Configuration")
+    
+    # Create two columns for compact display
+    col1, col2 = st.sidebar.columns(2)
+    
+    # First column - Hardware details
+    col1.markdown(f"**Cloud:** {model_info.cloud.upper()}")
+    col1.markdown(f"**Instance:** {model_info.instance}")
+    col1.markdown(f"**GPU:** {model_info.gpu.upper()}")
+    
+    # Second column - Software/Config details
+    engine_name = 'TensorRT-LLM' if model_info.engine == 'tensorrt_llm' else model_info.engine.upper()
+    col2.markdown(f"**Engine:** {engine_name}")
+    col2.markdown(f"**Config:** {model_info.gpu_config.upper()}")
+    col2.markdown(f"**Parallel:** {model_info.parallelism}")
+
+    # Optimization as a single line below the columns
+    st.sidebar.markdown(f"**Optimization:** {model_info.optimization.capitalize()}")
+
+def format_model_name(model_info, detailed=False):
+    """Format model name with profile information for display."""
+    if model_info.engine == 'unknown':
+        return f"{model_info.model}"
+    
+    # Create a display string for dropdown with full model name
+    engine = 'TRT' if model_info.engine == 'tensorrt_llm' else model_info.engine.upper()
+    return f"{model_info.model} ({model_info.cloud.upper()} | {model_info.instance} | {model_info.gpu} | {engine} | {model_info.gpu_config.upper()} | {model_info.parallelism})"
+
 def main():
     # Add custom CSS
     st.markdown("""
@@ -268,7 +298,7 @@ def main():
             selected_config = st.selectbox(
                 "Select Model Configuration",
                 options=list(config_groups.keys()),
-                format_func=lambda x: f"{config_groups[x]['model_info'].model} ({config_groups[x]['model_info'].cloud.upper()} | {config_groups[x]['model_info'].instance} | {config_groups[x]['model_info'].gpu.upper()})"
+                format_func=lambda x: format_model_name(config_groups[x]['model_info'], detailed=True)
             )
             
             # Get model info and available runs
@@ -282,11 +312,8 @@ def main():
                 )
                 return
             
-            # Display model information with custom styling
-            with st.expander("Model Configuration", expanded=True):
-                st.markdown('<div class="model-info">', unsafe_allow_html=True)
-                st.markdown(format_model_info(model_info), unsafe_allow_html=True)
-                st.markdown('</div>', unsafe_allow_html=True)
+            # Display model configuration details in sidebar
+            display_model_details(model_info)
             
             # Token configuration section
             st.markdown('<h2 class="section-header">Token Configuration</h2>', unsafe_allow_html=True)

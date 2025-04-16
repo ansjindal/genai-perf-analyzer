@@ -671,15 +671,34 @@ class GenAIPerfVisualizer:
         # Create traces for each model
         for model_name, runs in metrics_data.items():
             # Create shorter label for legend
-            if isinstance(model_name, str) and "TokenConfig" in model_name:
+            if isinstance(model_name, str):
                 try:
-                    input_tokens = model_name.split("input_tokens=")[1].split(",")[0]
-                    output_tokens = model_name.split("output_tokens=")[1].split(",")[0]
-                    short_label = f"In:{input_tokens}, Out:{output_tokens}"
+                    # Parse model profile from the name
+                    parts = model_name.split('_')
+                    cloud_idx = -1
+                    for i, part in enumerate(parts):
+                        if part.lower() in ['aws', 'gcp', 'azure']:
+                            cloud_idx = i
+                            break
+                    
+                    if cloud_idx != -1:
+                        profile_parts = '_'.join(parts[cloud_idx + 3:]).split('-')
+                        engine = profile_parts[0]
+                        gpu_config = '-'.join(profile_parts[1:3])
+                        parallelism = '-'.join(p for p in profile_parts[3:-1] if p.startswith(('tp', 'pp')))
+                        
+                        # Create abbreviated label
+                        engine_short = 'TRT' if engine == 'tensorrt_llm' else engine.upper()
+                        gpu_short = gpu_config.split('-')[0].upper()
+                        precision = gpu_config.split('-')[1].upper()
+                        parallel = parallelism.upper()
+                        short_label = f"{engine_short}-{gpu_short}-{precision}-{parallel}"
+                    else:
+                        short_label = model_name
                 except:
                     short_label = model_name
             else:
-                short_label = model_name
+                short_label = str(model_name)
             
             x_values = []  # metric values
             y_values = []  # throughput values
@@ -697,6 +716,7 @@ class GenAIPerfVisualizer:
                         x_values.append(metric_value)
                         y_values.append(throughput)
                         hover_text.append(
+                            f"Model: {model_name}<br>" +
                             f"{metric_name} ({stat_param}): {metric_value:.2f} {metric_unit}<br>" +
                             f"Throughput: {throughput:.2f} req/s"
                         )
@@ -723,24 +743,12 @@ class GenAIPerfVisualizer:
                     hovertemplate="%{text}<extra></extra>"
                 ))
         
-        # Check if any traces were added
-        if not fig.data:
-            print("No traces were added to the figure")  # Debug
-            fig.update_layout(
-                title="No valid data available for plotting",
-                xaxis_title="No Data",
-                yaxis_title="No Data"
-            )
-            return fig
-            
-        print(f"Created figure with {len(fig.data)} traces")  # Debug
-        
         # Update layout
         fig.update_layout(
             title=dict(
-                text=f"{metric_name.replace('_', ' ').title()} vs Request Throughput ({stat_param})",
+                text=f"{metric_name.replace('_', ' ').title()} vs Request Throughput",
                 x=0.5,
-                y=0.98,
+                y=0.95,
                 xanchor='center',
                 yanchor='top',
                 font=dict(
@@ -780,7 +788,7 @@ class GenAIPerfVisualizer:
                 font=dict(size=10)
             ),
             hovermode='closest',
-            margin=dict(t=150, b=50, l=50, r=50),
+            margin=dict(t=100, b=50, l=50, r=50),
             plot_bgcolor='white'
         )
         
@@ -824,15 +832,34 @@ class GenAIPerfVisualizer:
         # Process each model
         for model_idx, (model_name, runs) in enumerate(metrics_data.items()):
             # Create shorter label for legend
-            if isinstance(model_name, str) and "TokenConfig" in model_name:
+            if isinstance(model_name, str):
                 try:
-                    input_tokens = model_name.split("input_tokens=")[1].split(",")[0]
-                    output_tokens = model_name.split("output_tokens=")[1].split(",")[0]
-                    short_label = f"In:{input_tokens}, Out:{output_tokens}"
+                    # Parse model profile from the name
+                    parts = model_name.split('_')
+                    cloud_idx = -1
+                    for i, part in enumerate(parts):
+                        if part.lower() in ['aws', 'gcp', 'azure']:
+                            cloud_idx = i
+                            break
+                    
+                    if cloud_idx != -1:
+                        profile_parts = '_'.join(parts[cloud_idx + 3:]).split('-')
+                        engine = profile_parts[0]
+                        gpu_config = '-'.join(profile_parts[1:3])
+                        parallelism = '-'.join(p for p in profile_parts[3:-1] if p.startswith(('tp', 'pp')))
+                        
+                        # Create abbreviated label
+                        engine_short = 'TRT' if engine == 'tensorrt_llm' else engine.upper()
+                        gpu_short = gpu_config.split('-')[0].upper()
+                        precision = gpu_config.split('-')[1].upper()
+                        parallel = parallelism.upper()
+                        short_label = f"{engine_short}-{gpu_short}-{precision}-{parallel}"
+                    else:
+                        short_label = model_name
                 except:
                     short_label = model_name
             else:
-                short_label = model_name
+                short_label = str(model_name)
             
             # Collect all latency values and throughputs for this model
             latency_values = []
@@ -911,7 +938,7 @@ class GenAIPerfVisualizer:
                     ),
                     showlegend=True,
                     hovertemplate=(
-                        f"{short_label}<br>" +
+                        f"Model: {model_name}<br>" +
                         f"Mean: {mean:.2f}<br>" +
                         f"IQR: [{q1:.2f}, {q3:.2f}]<br>" +
                         f"P90: {p90:.2f}<br>" +

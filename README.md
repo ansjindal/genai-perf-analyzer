@@ -12,6 +12,12 @@ A streamlined tool for analyzing and visualizing performance metrics of Large La
   - Overlaid box plots for latency distributions
   - Trend lines showing metric variations with throughput
   - Color-coded model configurations for easy differentiation
+- **Model Configuration Display**:
+  - Compact model selection format: `model_name (CLOUD | INSTANCE | GPU | ENGINE | GPU_CONFIG | PARALLEL)`
+  - Detailed configuration panel showing:
+    - Hardware details (Cloud, Instance, GPU)
+    - Software configuration (Engine, GPU Config, Parallelism)
+    - Optimization strategy
 - **Metric Analysis**: Analyze various performance metrics including:
   - Request Latency
   - Time to First Token
@@ -71,26 +77,36 @@ pip install -r requirements.txt
 1. Place your performance data in the `data/` directory following the expected format:
 ```
 data/
-├── meta_llama-3.1-8b_aws_p5.48xlarge_h100/              # Model with cloud provider and instance
+├── meta_llama-3.1-8b_aws_p5.48xlarge_h100_tensorrt_llm-h100-fp8-tp1-pp1-throughput/
 │   ├── meta_llama-3.1-8b-instruct-openai-chat-concurrency1/
 │   │   ├── 200_200_genai_perf.json    # Input 200, Output 200 tokens
 │   │   ├── 200_5_genai_perf.json      # Input 200, Output 5 tokens
 │   │   └── 1000_200_genai_perf.json   # Input 1000, Output 200 tokens
-│   ├── meta_llama-3.1-8b-instruct-openai-chat-concurrency2/
-│   │   ├── 200_200_genai_perf.json
-│   │   └── ...
-│   └── meta_llama-3.1-8b-instruct-openai-chat-concurrency5/
+│   └── meta_llama-3.1-8b-instruct-openai-chat-concurrency2/
 │       └── ...
-└── meta_llama-3.1-8b_aws_g5.12xlarge_a10/              # Same model, different hardware
+└── meta_llama-3.1-8b_aws_g5.12xlarge_a10g_tensorrt_llm-a10g-bf16-tp2-latency/
     └── meta_llama-3.1-8b-instruct-openai-chat-concurrency1/
         └── ...
-
 ```
 
 Directory naming convention:
-- Top level: `{model_name}_{cloud_provider}_{instance_type}_{gpu_type}`
+- Top level: `{model_name}_{cloud_provider}_{instance_type}_{gpu_type}_{model_profile}`
+  where `model_profile` contains:
+  - Engine type (e.g., tensorrt_llm, vllm)
+  - GPU name (e.g., h100, a10g)
+  - Precision (e.g., fp8, bf16)
+  - Tensor parallelism (e.g., tp1, tp2)
+  - Pipeline parallelism (e.g., pp1)
+  - Optimization target (throughput/latency)
 - Test runs: `{model_name}-{api_type}-concurrency{N}`
 - Results: `{input_tokens}_{output_tokens}_genai_perf.json`
+
+The model profile information is displayed in a consistent format throughout the application:
+- Selection dropdown: `meta_llama-3.1-8b (AWS | p5.48xlarge | A100 | TRT | H100-FP8 | TP1-PP1)`
+- Detailed view shows:
+  - Hardware: Cloud provider, Instance type, GPU model
+  - Software: Engine type, GPU configuration, Parallelism strategy
+  - Additional: Optimization target
 
 2. Run the Streamlit application:
 ```bash
