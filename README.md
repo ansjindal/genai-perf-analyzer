@@ -4,8 +4,14 @@ A streamlined tool for analyzing and visualizing performance metrics of Large La
 
 ## Features
 
-- **Interactive Visualization**: Dynamic plots for latency and throughput metrics
-- **Configuration Comparison**: Compare different model configurations side by side
+- **Interactive Visualization**: Dynamic plots with:
+  - Latency distributions shown as box plots with throughput on x-axis
+  - Performance metrics plotted against request throughput
+  - Statistical indicators (mean, quartiles, P90, P99)
+- **Configuration Comparison**: Compare different model configurations side by side with:
+  - Overlaid box plots for latency distributions
+  - Trend lines showing metric variations with throughput
+  - Color-coded model configurations for easy differentiation
 - **Metric Analysis**: Analyze various performance metrics including:
   - Request Latency
   - Time to First Token

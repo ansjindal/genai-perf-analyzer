@@ -15,25 +15,27 @@ graph TB
     end
 
     subgraph Web Interface
-        UI --> |Latency Metrics| LM[Latency Module]
-        UI --> |Throughput Metrics| TM[Throughput Module]
+        UI --> |Performance Metrics| PM[Performance Module]
         
-        LM --> |Plots| P1[Distribution Plots]
-        LM --> |Plots| P2[Timeline Plots]
-        TM --> |Plots| P3[Comparison Plots]
-        TM --> |Plots| P4[Concurrency Plots]
+        PM --> |Plots| P1[Distribution Plots]
+        PM --> |Plots| P2[Metric Comparison Plots]
+        
+        subgraph Plot Types
+            P1 --> |Vertical Box Plots| VB[Latency vs Throughput]
+            P2 --> |Trend Lines| TL[Metrics vs Throughput]
+        end
     end
 
     subgraph User Interaction
         C[Configuration Selection] --> |User Input| UI
         MT[Metric Type Selection] --> |User Input| UI
-        PT[Plot Type Selection] --> |User Input| UI
     end
 
     style Data Layer fill:#e1f5fe,stroke:#01579b
     style Application Core fill:#f3e5f5,stroke:#4a148c
     style Web Interface fill:#e8f5e9,stroke:#1b5e20
     style User Interaction fill:#fff3e0,stroke:#e65100
+    style Plot Types fill:#fce4ec,stroke:#880e4f
 ```
 
 ## Component Description
@@ -44,29 +46,32 @@ graph TB
 - **Data Cache**: Stores processed metrics for quick access
 
 ### Application Core
-- **Visualizer**: Creates interactive plots using Plotly
+- **Visualizer**: Creates interactive plots using Plotly, with consistent throughput-based x-axis
 - **UI Components**: Streamlit components for web interface
 
 ### Web Interface
-- **Latency Module**: Handles latency-related visualizations
-- **Throughput Module**: Handles throughput-related visualizations
+- **Performance Module**: Unified handling of performance metric visualizations
 - **Plot Types**:
-  - Distribution Plots: Box plots for metric distributions
-  - Timeline Plots: Time series visualization
-  - Comparison Plots: Bar charts for metric comparisons
-  - Concurrency Plots: Line plots for concurrency analysis
+  - Distribution Plots: Vertical box plots showing latency distributions against throughput
+  - Metric Comparison Plots: Trend lines and statistical indicators plotted against throughput
+  - Plot Features:
+    - Consistent x-axis (throughput) across all plots
+    - Statistical indicators (mean, quartiles, P90, P99)
+    - Color-coded configurations for easy comparison
 
 ### User Interaction
 - **Configuration Selection**: Model and token config selection
 - **Metric Type Selection**: Choose metrics to analyze
-- **Plot Type Selection**: Select visualization type
 
 ## Data Flow
 
 1. User selects configurations and metrics through the web interface
 2. Data Loader reads and processes JSON files from the data directory
 3. Processed data is cached for performance
-4. Visualizer creates appropriate plots based on user selection
+4. Visualizer creates plots with:
+   - Request throughput consistently on x-axis
+   - Selected metrics on y-axis
+   - Statistical indicators and distributions as appropriate
 5. UI components render the plots and handle user interaction
 
 ## Technology Stack

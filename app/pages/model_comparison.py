@@ -128,23 +128,6 @@ def main():
                 format_func=lambda x: f"Input: {x.input_tokens}, Output: {x.output_tokens}"
             )
             
-            # Get available concurrency levels from test folders
-            concurrency_levels = set()
-            for model in selected_models:
-                for run in config_groups[model]['test_folders']:
-                    if '-concurrency' in run:
-                        try:
-                            concurrency = int(run.split('-concurrency')[1])
-                            concurrency_levels.add(concurrency)
-                        except ValueError:
-                            continue
-            
-            # Concurrency selection
-            selected_concurrency = st.selectbox(
-                "Select Concurrency Level",
-                options=sorted(list(concurrency_levels))
-            )
-            
         else:  # Token Configurations comparison
             # Select single model
             selected_model = st.selectbox(
@@ -173,22 +156,6 @@ def main():
             if not selected_token_configs:
                 st.info("Please select at least one token configuration to analyze.")
                 return
-                
-            # Get available concurrency levels from test folders
-            concurrency_levels = set()
-            for run in config_groups[selected_model]['test_folders']:
-                if '-concurrency' in run:
-                    try:
-                        concurrency = int(run.split('-concurrency')[1])
-                        concurrency_levels.add(concurrency)
-                    except ValueError:
-                        continue
-            
-            # Concurrency selection
-            selected_concurrency = st.selectbox(
-                "Select Concurrency Level",
-                options=sorted(list(concurrency_levels))
-            )
         
         # Add analyze button
         if st.button("Generate Comparison"):
@@ -199,34 +166,52 @@ def main():
                 if comparison_type == "Model Profiles":
                     # Load data for each model
                     for model in selected_models:
-                        model_metrics = {}
-                        # Find matching run folder with the selected concurrency
-                        matching_run = None
-                        model_base = config_groups[model]['model_info'].model
+                        model_metrics = []  # List to store metrics from all runs
+                        # Load data from all runs
                         for run in config_groups[model]['test_folders']:
-                            if run.startswith(model_base) and f"-concurrency{selected_concurrency}" in run:
-                                matching_run = run
-                                break
+                            run_data = loader.get_metrics_for_runs([run], selected_token_config)
+                            if run_data and run in run_data:
+                                # Extract concurrency level from run name
+                                concurrency = None
+                                if '-concurrency' in run:
+                                    try:
+                                        concurrency = int(run.split('-concurrency')[1])
+                                    except ValueError:
+                                        continue
+                                
+                                if concurrency is not None:
+                                    # Add concurrency to metrics
+                                    metrics = run_data[run]
+                                    metrics['concurrency'] = concurrency
+                                    model_metrics.append(metrics)
                         
-                        if matching_run:
-                            run_data = loader.get_metrics_for_runs([matching_run], selected_token_config)
-                            if run_data and matching_run in run_data:
-                                model_metrics = run_data[matching_run]
+                        # Sort by concurrency
+                        model_metrics.sort(key=lambda x: x.get('concurrency', 0))
                         st.session_state.metrics_data[model] = model_metrics
                 else:
-                    # Find matching run folder with the selected concurrency
-                    matching_run = None
-                    model_base = config_groups[selected_model]['model_info'].model
-                    for run in config_groups[selected_model]['test_folders']:
-                        if run.startswith(model_base) and f"-concurrency{selected_concurrency}" in run:
-                            matching_run = run
-                            break
-                    
-                    if matching_run:
-                        for token_config in selected_token_configs:
-                            run_data = loader.get_metrics_for_runs([matching_run], token_config)
-                            if run_data and matching_run in run_data:
-                                st.session_state.metrics_data[str(token_config)] = run_data[matching_run]
+                    # Load data for all runs
+                    for token_config in selected_token_configs:
+                        config_metrics = []  # List to store metrics from all runs
+                        for run in config_groups[selected_model]['test_folders']:
+                            run_data = loader.get_metrics_for_runs([run], token_config)
+                            if run_data and run in run_data:
+                                # Extract concurrency level from run name
+                                concurrency = None
+                                if '-concurrency' in run:
+                                    try:
+                                        concurrency = int(run.split('-concurrency')[1])
+                                    except ValueError:
+                                        continue
+                                
+                                if concurrency is not None:
+                                    # Add concurrency to metrics
+                                    metrics = run_data[run]
+                                    metrics['concurrency'] = concurrency
+                                    config_metrics.append(metrics)
+                        
+                        # Sort by concurrency
+                        config_metrics.sort(key=lambda x: x.get('concurrency', 0))
+                        st.session_state.metrics_data[str(token_config)] = config_metrics
                 
                 st.session_state.comparison_generated = True
         
@@ -242,27 +227,46 @@ def main():
                 
                 for tab, metric in zip(latency_tabs, ['request_latency', 'time_to_first_token', 'inter_token_latency']):
                     with tab:
-                        plot_type = st.selectbox(
-                            "Select Plot Type",
-                            options=["Metric Comparison", "Latency Distribution", "Metric Timeline"],
-                            key=f"{metric}_plot_type"
+                        # Add statistic parameter selection
+                        stat_param = st.selectbox(
+                            "Select Statistic Parameter",
+                            options=["avg", "p50", "p90", "p95", "p99"],
+                            format_func=lambda x: {
+                                "avg": "Average",
+                                "p50": "Median (p50)",
+                                "p90": "90th Percentile",
+                                "p95": "95th Percentile",
+                                "p99": "99th Percentile"
+                            }[x],
+                            key=f"{metric}_stat_param"
                         )
                         
                         st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                         
-                        # Create plot based on selected type
+                        # Create metric comparison plot
                         if st.session_state.metrics_data:
-                            if plot_type == "Metric Comparison":
-                                fig = st.session_state.visualizer.create_metric_comparison_plot(st.session_state.metrics_data, metric)
-                            elif plot_type == "Latency Distribution":
-                                fig = st.session_state.visualizer.create_latency_distribution_plot(st.session_state.metrics_data, metric)
-                            else:  # Metric Timeline
-                                fig = st.session_state.visualizer.create_metric_timeline_plot(st.session_state.metrics_data, metric)
+                            fig = st.session_state.visualizer.create_model_comparison_plot(
+                                st.session_state.metrics_data,
+                                metric,
+                                stat_param=stat_param
+                            )
                             
                             if fig:
                                 st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.warning(f"No data found for concurrency level {selected_concurrency}")
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Add latency distribution comparison plot
+                        st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                        
+                        if st.session_state.metrics_data:
+                            fig = st.session_state.visualizer.create_latency_distribution_comparison_plot(
+                                st.session_state.metrics_data,
+                                metric
+                            )
+                            
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True)
                         
                         st.markdown('</div>', unsafe_allow_html=True)
             
@@ -273,27 +277,18 @@ def main():
                 
                 for tab, metric in zip(throughput_tabs, ['request_throughput', 'output_token_throughput', 'output_token_throughput_per_request']):
                     with tab:
-                        plot_type = st.selectbox(
-                            "Select Plot Type",
-                            options=["Metric Comparison", "Throughput vs Concurrency", "Metric Timeline"],
-                            key=f"{metric}_plot_type"
-                        )
-                        
                         st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                         
-                        # Create plot based on selected type
+                        # Create plot
                         if st.session_state.metrics_data:
-                            if plot_type == "Metric Comparison":
-                                fig = st.session_state.visualizer.create_metric_comparison_plot(st.session_state.metrics_data, metric)
-                            elif plot_type == "Throughput vs Concurrency":
-                                fig = st.session_state.visualizer.create_throughput_over_concurrency_plot(st.session_state.metrics_data, metric)
-                            else:  # Metric Timeline
-                                fig = st.session_state.visualizer.create_metric_timeline_plot(st.session_state.metrics_data, metric)
+                            fig = st.session_state.visualizer.create_model_comparison_plot(
+                                st.session_state.metrics_data,
+                                metric,
+                                stat_param="avg"  # Always use average for throughput metrics
+                            )
                             
                             if fig:
                                 st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.warning(f"No data found for concurrency level {selected_concurrency}")
                         
                         st.markdown('</div>', unsafe_allow_html=True)
 

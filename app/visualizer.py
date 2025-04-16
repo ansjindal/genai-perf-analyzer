@@ -22,136 +22,156 @@ class GenAIPerfVisualizer:
         self,
         metrics_data: Dict[str, Dict[str, Dict]],
         metric_name: str,
-        sort_by_concurrency: bool = True
+        stat_param: str = "avg"
     ) -> go.Figure:
-        """Create a plot comparing a specific metric across runs, showing available statistics."""
-        runs = list(metrics_data.keys())
+        """Create a plot comparing request throughput against metric values for a single model."""
+        print(f"Received metrics_data with {len(metrics_data)} entries")  # Debug
         
-        if sort_by_concurrency:
-            # Extract concurrency values and sort
-            concurrency_values = []
-            for run in runs:
-                if 'concurrency' in run:
-                    concurrency = int(run.split('concurrency')[1])
-                    concurrency_values.append(concurrency)
-                else:
-                    concurrency_values.append(0)
+        if not metrics_data:
+            print("No metrics data received")  # Debug
+            # Return empty figure if no data
+            fig = go.Figure()
+            fig.update_layout(
+                title="No data available for plotting",
+                xaxis_title="No Data",
+                yaxis_title="No Data"
+            )
+            return fig
             
-            sorted_indices = np.argsort(concurrency_values)
-            runs = [runs[i] for i in sorted_indices]
-        
-        # Format labels
-        run_labels = []
-        for run in runs:
-            if isinstance(run, TokenConfig):
-                # For token configs, show input/output tokens
-                run_labels.append(f"In:{run.input_tokens}<br>Out:{run.output_tokens}")
-            elif 'TokenConfig' in str(run):
-                # Handle string representation of TokenConfig
-                parts = str(run).split(',')
-                input_tokens = parts[0].split('=')[1]
-                output_tokens = parts[1].split('=')[1]
-                run_labels.append(f"In:{input_tokens}<br>Out:{output_tokens}")
-            else:
-                # For model names or other runs, show concurrency if present
-                if 'concurrency' in run:
-                    concurrency = int(run.split('concurrency')[1])
-                    run_labels.append(f"C:{concurrency}")
-                else:
-                    # Shorten other labels by showing only essential info
-                    if '_aws_' in run.lower():
-                        # For AWS instances, show GPU type
-                        gpu = run.split('_')[-1]
-                        run_labels.append(f"GPU:{gpu}")
-                    else:
-                        run_labels.append(run.split('_')[0])
-        
-        # Create figure
         fig = go.Figure()
         
-        # Get available statistics from first non-empty metric data
-        available_stats = []
-        metric_unit = self.METRIC_UNITS.get(metric_name, '')  # Default unit from class constant
+        # Get metric unit from first data point that has data
+        metric_unit = self.METRIC_UNITS.get(metric_name, '')
         
-        for run in runs:
-            metric_data = metrics_data[run].get(metric_name, {})
-            if isinstance(metric_data, dict):
-                # Get unit from metric data if available
-                if 'unit' in metric_data:
-                    metric_unit = metric_data['unit']
-                
-                # Check which statistics are available
-                if 'avg' in metric_data:
-                    available_stats.append(('avg', 'Average', 'rgb(158,202,225)'))
-                if 'p50' in metric_data:
-                    available_stats.append(('p50', 'p50 (median)', 'rgb(94,94,94)'))
-                if 'p90' in metric_data:
-                    available_stats.append(('p90', 'p90', 'rgb(255,127,14)'))
-                if 'p95' in metric_data:
-                    available_stats.append(('p95', 'p95', 'rgb(214,39,40)'))
-                if 'p99' in metric_data:
-                    available_stats.append(('p99', 'p99', 'rgb(148,103,189)'))
-                break
+        # Define statistics to show
+        stats_to_show = ['avg', 'p50', 'p90', 'p95', 'p99']
+        stat_display_names = {
+            'avg': 'Average',
+            'p50': 'P50',
+            'p90': 'P90',
+            'p95': 'P95',
+            'p99': 'P99'
+        }
         
-        print(f"Available stats for {metric_name}: {available_stats}")
+        # Define colors and dash patterns for each statistic
+        stat_styles = {
+            'avg': {'color': 'rgb(31, 119, 180)', 'dash': 'solid'},      # Blue, solid
+            'p50': {'color': 'rgb(44, 160, 44)', 'dash': 'dot'},         # Green, dotted
+            'p90': {'color': 'rgb(214, 39, 40)', 'dash': 'dash'},        # Red, dashed
+            'p95': {'color': 'rgb(148, 103, 189)', 'dash': 'dashdot'},   # Purple, dashdot
+            'p99': {'color': 'rgb(255, 127, 14)', 'dash': 'longdash'}    # Orange, long dash
+        }
         
-        # Extract and plot available statistics
-        for stat_key, stat_name, stat_color in available_stats:
-            values = []
-            for run in runs:
-                metric_data = metrics_data[run].get(metric_name, {})
-                if isinstance(metric_data, dict):
-                    value = metric_data.get(stat_key)
-                    print(f"Run {run}, Stat {stat_key}: {value}")
-                    values.append(value)
-                else:
-                    values.append(None)
+        # Create traces for each statistic
+        for stat in stats_to_show:
+            x_values = []  # metric values
+            y_values = []  # throughput values
+            hover_text = []  # hover information
             
-            if stat_key == 'avg':
-                # Show average as bars
-                fig.add_trace(go.Bar(
-                    name=stat_name,
-                    x=run_labels,
-                    y=values,
-                    text=[f"{v:.2f}" if v is not None else "N/A" for v in values],
-                    textposition='auto',
-                    marker_color=stat_color,
-                    opacity=0.8
-                ))
-            else:
-                # Show percentiles as lines with markers
+            # Process each run configuration
+            for label, run_data in metrics_data.items():
+                # Get metric data and throughput data
+                metric_data = run_data.get(metric_name, {})
+                throughput_data = run_data.get('request_throughput', {})
+                
+                if isinstance(metric_data, dict) and isinstance(throughput_data, dict):
+                    metric_value = metric_data.get(stat)
+                    throughput = throughput_data.get('avg')  # Always use average for throughput
+                    
+                    if metric_value is not None and throughput is not None:
+                        x_values.append(metric_value)
+                        y_values.append(throughput)
+                        hover_text.append(
+                            f"{metric_name} ({stat}): {metric_value:.2f} {metric_unit}<br>" +
+                            f"Throughput: {throughput:.2f} req/s"
+                        )
+            
+            if x_values and y_values:
+                # Sort points by x values for proper line connection
+                points = sorted(zip(x_values, y_values, hover_text))
+                x_values = [p[0] for p in points]
+                y_values = [p[1] for p in points]
+                hover_text = [p[2] for p in points]
+                
+                # Add line plot for this statistic with custom style
                 fig.add_trace(go.Scatter(
-                    name=stat_name,
-                    x=run_labels,
-                    y=values,
+                    x=x_values,
+                    y=y_values,
                     mode='lines+markers',
-                    line=dict(color=stat_color, width=2),
-                    marker=dict(size=8)
+                    name=stat_display_names[stat],
+                    text=hover_text,
+                    line=dict(
+                        color=stat_styles[stat]['color'],
+                        width=2,
+                        dash=stat_styles[stat]['dash']
+                    ),
+                    marker=dict(
+                        size=8,
+                        line=dict(width=2, color='white'),
+                        color=stat_styles[stat]['color']
+                    ),
+                    hovertemplate="%{text}<extra></extra>"
                 ))
+        
+        # Check if any traces were added
+        if not fig.data:
+            print("No traces were added to the figure")  # Debug
+            fig.update_layout(
+                title="No valid data available for plotting",
+                xaxis_title="No Data",
+                yaxis_title="No Data"
+            )
+            return fig
+            
+        print(f"Created figure with {len(fig.data)} traces")  # Debug
         
         # Update layout
         fig.update_layout(
-            title=f"{metric_name.replace('_', ' ').title()} Comparison Across Runs",
-            xaxis_title="Configuration",
-            yaxis_title=f"{metric_name.replace('_', ' ').title()} ({metric_unit})",
+            title=dict(
+                text=f"Request Throughput vs {metric_name.replace('_', ' ').title()}",
+                x=0.5,
+                y=0.98,
+                xanchor='center',
+                yanchor='top',
+                font=dict(
+                    size=16,
+                    color='rgb(44, 44, 44)',
+                    family='bold Arial, Arial, sans-serif'
+                ),
+                pad=dict(t=30)
+            ),
+            xaxis=dict(
+                title=f"{metric_name.replace('_', ' ').title()} ({metric_unit})",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                rangemode='tozero'
+            ),
+            yaxis=dict(
+                title="Request Throughput (req/s)",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                rangemode='tozero'
+            ),
             template="plotly_white",
-            barmode='group',
-            # Improve legend
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
-                y=1.02,
+                y=0.98,
                 xanchor="right",
-                x=1
+                x=1,
+                font=dict(size=10)
             ),
-            # Configure x-axis for better label display
-            xaxis=dict(
-                tickangle=0,
-                tickmode='array',
-                ticktext=run_labels,
-                tickvals=list(range(len(run_labels))),
-                tickfont=dict(size=10)
-            )
+            hovermode='closest',
+            margin=dict(t=150, b=50, l=50, r=50),
+            plot_bgcolor='white'
         )
         
         return fig
@@ -161,173 +181,225 @@ class GenAIPerfVisualizer:
         metrics_data: Dict[str, Dict[str, Dict]],
         metric_name: str
     ) -> go.Figure:
-        """Create box plots showing latency distribution across runs.
+        """Create box plots showing latency distribution against request throughput."""
+        # Collect all latency values and corresponding throughputs
+        latency_values = []
+        throughput = None
         
-        Args:
-            metrics_data: Dictionary containing metrics data for all runs
-            metric_name: Name of the latency metric to plot
+        for run_name in metrics_data:
+            metric_data = metrics_data[run_name].get(metric_name, {})
+            throughput_data = metrics_data[run_name].get('request_throughput', {})
             
-        Returns:
-            Plotly figure object
-        """
-        # Sort runs by concurrency number or token config
-        sorted_runs = sorted(
-            metrics_data.keys(),
-            key=lambda x: int(x.split('concurrency')[1]) if 'concurrency' in x else 0
-        )
+            if (isinstance(metric_data, dict) and isinstance(throughput_data, dict) and
+                'avg' in metric_data and 'avg' in throughput_data):
+                
+                # Get statistics
+                mean = metric_data['avg']
+                p50 = metric_data.get('p50', mean)
+                p25 = metric_data.get('p25', mean - (p50 - mean))
+                p75 = metric_data.get('p75', mean + (mean - p50))
+                p90 = metric_data.get('p90', p75 + (p75 - p25))
+                p99 = metric_data.get('p99', p90 + (p90 - p75))
+                min_val = metric_data.get('min', p25 - 1.5 * (p75 - p25))
+                max_val = metric_data.get('max', p75 + 1.5 * (p75 - p25))
+                
+                # Store all statistics
+                latency_values.extend([min_val, p25, p50, p75, max_val, mean, p90, p99])
+                
+                # Store average throughput
+                if throughput is None:
+                    throughput = throughput_data['avg']
         
-        # Prepare data for plots
+        if not latency_values:
+            return None
+        
+        # Create figure
         fig = go.Figure()
         
-        # Define a custom color palette with better contrast
-        colors = [
-            '#1f77b4',  # Blue
-            '#ff7f0e',  # Orange
-            '#2ca02c',  # Green
-            '#d62728',  # Red
-            '#9467bd',  # Purple
-            '#8c564b',  # Brown
-            '#e377c2',  # Pink
-            '#7f7f7f',  # Gray
-            '#bcbd22',  # Yellow-green
-            '#17becf'   # Cyan
-        ]
+        # Define colors
+        box_color = 'rgb(31, 119, 180)'
+        outlier_color = 'rgba(31, 119, 180, 0.6)'
+        mean_color = 'rgb(214, 39, 40)'  # Red for mean line
         
-        for i, run_name in enumerate(sorted_runs):
-            metric_data = metrics_data[run_name].get(metric_name, {})
-            if not isinstance(metric_data, dict):
-                continue
-                
-            # Get statistics
-            stats = {
-                'mean': metric_data.get('avg'),
-                'median': metric_data.get('p50'),
-                'q1': metric_data.get('p25'),
-                'q3': metric_data.get('p75'),
-                'min': metric_data.get('min'),
-                'max': metric_data.get('max'),
-                'p90': metric_data.get('p90'),
-                'p95': metric_data.get('p95'),
-                'p99': metric_data.get('p99'),
-                'std': metric_data.get('std')
-            }
-            
-            if not stats['mean']:
-                continue
-                
-            # Generate synthetic points for visualization
-            n_points = 100
-            if stats['std']:
-                points = np.random.normal(stats['mean'], stats['std'], n_points)
-                points = np.clip(points, stats['min'], stats['max'])
-            else:
-                points = np.full(n_points, stats['mean'])
-            
-            # Format name based on run type
-            if isinstance(run_name, str) and 'TokenConfig' in run_name:
-                # For token configs, show input/output tokens
-                parts = str(run_name).split(',')
-                input_tokens = parts[0].split('=')[1]
-                output_tokens = parts[1].split('=')[1]
-                name = f"In:{input_tokens}, Out:{output_tokens}"
-            else:
-                # For concurrency levels
-                concurrency = int(run_name.split('concurrency')[1]) if 'concurrency' in run_name else 0
-                name = f"Concurrency {concurrency}"
-            
-            color = colors[i % len(colors)]
-            
-            # Add box plot with points
-            fig.add_trace(go.Box(
-                y=points,
-                name=name,
-                boxpoints='outliers',  # show outliers only
-                marker=dict(
-                    color=color,
-                    size=4,
-                    opacity=0.7
-                ),
-                line=dict(
-                    color=color,
-                    width=2
-                ),
-                fillcolor=color,
-                opacity=0.6,
-                # Add detailed statistics to hover
-                customdata=np.array([[
-                    stats['mean'],
-                    stats['median'],
-                    stats['q1'],
-                    stats['q3'],
-                    stats['p90'],
-                    stats['p95'],
-                    stats['p99']
-                ]]),
-                hovertemplate=(
-                    "<b>%{x}</b><br>" +
-                    "Mean: %{customdata[0]:.2f}<br>" +
-                    "Median: %{customdata[1]:.2f}<br>" +
-                    "Q1: %{customdata[2]:.2f}<br>" +
-                    "Q3: %{customdata[3]:.2f}<br>" +
-                    "P90: %{customdata[4]:.2f}<br>" +
-                    "P95: %{customdata[5]:.2f}<br>" +
-                    "P99: %{customdata[6]:.2f}<br>" +
-                    "<extra></extra>"
-                )
-            ))
+        # Calculate statistics for the box plot
+        min_val = min(latency_values)
+        max_val = max(latency_values)
+        q1 = np.percentile(latency_values, 25)
+        median = np.percentile(latency_values, 50)
+        q3 = np.percentile(latency_values, 75)
+        mean = np.mean(latency_values)
+        p90 = np.percentile(latency_values, 90)
+        p99 = np.percentile(latency_values, 99)
+        
+        # Add box plot
+        fig.add_trace(go.Box(
+            x=[throughput] * 5,
+            y=[min_val, q1, median, q3, max_val],
+            name='Distribution',
+            orientation='v',
+            boxpoints=False,
+            line=dict(color=box_color, width=2),
+            fillcolor='rgba(31, 119, 180, 0.1)',
+            boxmean=True,
+            whiskerwidth=0.7
+        ))
+        
+        # Add mean marker with error bars
+        fig.add_trace(go.Scatter(
+            x=[throughput],
+            y=[mean],
+            mode='markers',
+            name='Mean',
+            marker=dict(
+                symbol='line-ew',  # Horizontal line symbol
+                size=20,
+                color=mean_color,
+                line=dict(width=2)
+            ),
+            error_y=dict(
+                type='data',
+                array=[q3 - q1],  # IQR as error
+                color=mean_color,
+                thickness=1,
+                width=10
+            ),
+            showlegend=False,
+            hovertemplate=(
+                f"Mean: {mean:.2f}<br>" +
+                f"IQR: [{q1:.2f}, {q3:.2f}]<br>" +
+                f"Throughput: {throughput:.2f} req/s<br>" +
+                "<extra></extra>"
+            )
+        ))
+        
+        # Add percentile markers
+        fig.add_trace(go.Scatter(
+            x=[throughput],
+            y=[p90],
+            mode='markers',
+            name='P90',
+            marker=dict(
+                symbol='diamond',
+                size=10,
+                color=outlier_color,
+                line=dict(color=box_color, width=1)
+            ),
+            showlegend=False,
+            hovertemplate=(
+                f"P90: {p90:.2f}<br>" +
+                f"Throughput: {throughput:.2f} req/s<br>" +
+                "<extra></extra>"
+            )
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=[throughput],
+            y=[p99],
+            mode='markers',
+            name='P99',
+            marker=dict(
+                symbol='star',
+                size=12,
+                color=outlier_color,
+                line=dict(color=box_color, width=1)
+            ),
+            showlegend=False,
+            hovertemplate=(
+                f"P99: {p99:.2f}<br>" +
+                f"Throughput: {throughput:.2f} req/s<br>" +
+                "<extra></extra>"
+            )
+        ))
         
         # Get metric unit
-        unit = metric_data.get('unit', self.METRIC_UNITS.get(metric_name, ''))
+        unit = metrics_data[list(metrics_data.keys())[0]][metric_name].get('unit', self.METRIC_UNITS.get(metric_name, ''))
+        
+        # Calculate axis ranges with padding
+        y_padding = (max_val - min_val) * 0.1
+        x_padding = throughput * 0.1
         
         # Update layout
         fig.update_layout(
             title=dict(
-                text=f"{metric_name.replace('_', ' ').title()}",  # Simple title without bold
+                text=f"{metric_name.replace('_', ' ').title()} Distribution vs Request Throughput",
                 x=0.5,
-                y=0.95,  # Move down slightly
+                y=0.95,
                 xanchor='center',
                 yanchor='top',
                 font=dict(
-                    size=14,  # Smaller font size
-                    color='rgb(50, 50, 50)',  # Dark gray color
-                    family="Arial, sans-serif"
-                )
+                    size=16,
+                    color='rgb(44, 44, 44)',
+                    family='bold Arial, Arial, sans-serif'
+                ),
+                pad=dict(t=30)
             ),
-            xaxis_title="Configuration",
-            yaxis_title=f"{metric_name.replace('_', ' ').title()} ({unit})",
-            template="plotly_white",
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-                title=None,
-                font=dict(size=10)
-            ),
-            # Add hover mode
-            hovermode='closest',
-            # Add grid
             xaxis=dict(
-                showgrid=True,
-                gridwidth=1,
-                gridcolor='rgba(128, 128, 128, 0.2)',
-                tickangle=0,
-                tickfont=dict(size=10)
-            ),
-            yaxis=dict(
+                title="Request Throughput (req/s)",
                 showgrid=True,
                 gridwidth=1,
                 gridcolor='rgba(128, 128, 128, 0.2)',
                 zeroline=True,
                 zerolinewidth=1,
-                zerolinecolor='rgba(128, 128, 128, 0.2)'
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                range=[throughput - x_padding, throughput + x_padding]
             ),
-            # Add margin
-            margin=dict(t=40, b=50, l=50, r=50),  # Reduced top margin
+            yaxis=dict(
+                title=f"{metric_name.replace('_', ' ').title()} ({unit})",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                range=[min_val - y_padding, max_val + y_padding]
+            ),
+            template="plotly_white",
+            showlegend=False,
+            hovermode='closest',
+            margin=dict(t=100, b=50, l=50, r=50),
             plot_bgcolor='white'
         )
+        
+        # Add legend items
+        legend_items = [
+            ('Mean ± IQR', mean_color, 'line-ew', 20),
+            ('Box (Q1-Q3)', box_color, 'square', 10),
+            ('P90', outlier_color, 'diamond', 10),
+            ('P99', outlier_color, 'star', 12)
+        ]
+        
+        # Calculate legend position
+        legend_x = throughput - x_padding/2
+        legend_spacing = y_padding/2
+        
+        for i, (label, color, symbol, size) in enumerate(legend_items):
+            y_pos = max_val + (i - len(legend_items)/2) * legend_spacing
+            
+            # Add marker
+            fig.add_trace(go.Scatter(
+                x=[legend_x],
+                y=[y_pos],
+                mode='markers',
+                marker=dict(
+                    symbol=symbol,
+                    size=size,
+                    color=color,
+                    line=dict(color=box_color if label != 'Mean ± IQR' else color, width=1)
+                ),
+                showlegend=False,
+                hoverinfo='none'
+            ))
+            
+            # Add label
+            fig.add_annotation(
+                x=legend_x + x_padding/2,
+                y=y_pos,
+                text=label,
+                showarrow=False,
+                xanchor='left',
+                yanchor='middle',
+                font=dict(size=12)
+            )
         
         return fig
     
@@ -336,85 +408,119 @@ class GenAIPerfVisualizer:
         metrics_data: Dict[str, Dict[str, Dict]],
         metric_name: str
     ) -> go.Figure:
-        """Create a line plot showing throughput vs concurrency."""
-        concurrency_values = []
-        throughput_values = []
+        """Create a plot showing request throughput against concurrency levels."""
+        print(f"Creating throughput over concurrency plot for {metric_name}")  # Debug
         
-        # Sort runs by concurrency number
-        sorted_runs = sorted(
-            metrics_data.keys(),
-            key=lambda x: int(x.split('concurrency')[1]) if 'concurrency' in x else 0
-        )
-        
-        print(f"\nProcessing throughput data:")
-        print(f"Available runs: {sorted_runs}")
-        
-        for run_name in sorted_runs:
-            try:
-                # Extract concurrency number
-                if 'concurrency' in run_name:
-                    concurrency = int(run_name.split('concurrency')[1])
-                    
-                    # Get metric data
-                    metric_data = metrics_data[run_name].get(metric_name, {})
-                    print(f"Run {run_name}, Metric data: {metric_data}")
-                    
-                    if isinstance(metric_data, dict) and 'avg' in metric_data:
-                        throughput = metric_data['avg']
-                        print(f"Concurrency {concurrency}: {throughput}")
-                        concurrency_values.append(concurrency)
-                        throughput_values.append(throughput)
-            except (ValueError, TypeError) as e:
-                print(f"Error processing run {run_name}: {str(e)}")
-                continue
-        
-        if not concurrency_values or not throughput_values:
-            print("No valid throughput data found")
+        if not metrics_data:
+            print("No metrics data received")  # Debug
             return None
-        
-        print(f"Final data points:")
-        print(f"Concurrency values: {concurrency_values}")
-        print(f"Throughput values: {throughput_values}")
-        
-        # Create the plot
-        fig = go.Figure(data=[
-            go.Scatter(
-                x=concurrency_values,
-                y=throughput_values,
-                mode='lines+markers',
-                name=metric_name,
-                line=dict(color='rgb(31, 119, 180)', width=2),
-                marker=dict(size=10)
-            )
-        ])
+            
+        fig = go.Figure()
         
         # Get metric unit
-        unit = metrics_data[sorted_runs[0]][metric_name].get('unit', self.METRIC_UNITS.get(metric_name, ''))
+        first_key = next(iter(metrics_data))
+        metric_unit = ''
+        if isinstance(metrics_data[first_key], dict):
+            metric_data = metrics_data[first_key].get(metric_name, {})
+            if isinstance(metric_data, dict):
+                metric_unit = metric_data.get('unit', self.METRIC_UNITS.get(metric_name, ''))
+        
+        # Collect data points
+        x_values = []  # concurrency levels
+        y_values = []  # metric values
+        hover_text = []  # hover information
+        
+        # Process the data
+        for run_name, run_data in metrics_data.items():
+            if isinstance(run_data, dict):
+                # Extract concurrency from run name if available
+                concurrency = None
+                if '-concurrency' in run_name:
+                    try:
+                        concurrency = int(run_name.split('-concurrency')[1])
+                    except ValueError:
+                        continue
+                
+                if concurrency is not None:
+                    metric_data = run_data.get(metric_name, {})
+                    if isinstance(metric_data, dict) and 'avg' in metric_data:
+                        metric_value = metric_data['avg']
+                        x_values.append(concurrency)
+                        y_values.append(metric_value)
+                        hover_text.append(
+                            f"Concurrency: {concurrency}<br>" +
+                            f"{metric_name.replace('_', ' ').title()}: {metric_value:.2f} {metric_unit}"
+                        )
+        
+        if not x_values or not y_values:
+            print("No valid data points found")  # Debug
+            return None
+        
+        # Sort points by concurrency
+        points = sorted(zip(x_values, y_values, hover_text))
+        x_values = [p[0] for p in points]
+        y_values = [p[1] for p in points]
+        hover_text = [p[2] for p in points]
+        
+        # Add the trace
+        fig.add_trace(go.Scatter(
+            x=x_values,
+            y=y_values,
+            mode='lines+markers',
+            name=metric_name.replace('_', ' ').title(),
+            text=hover_text,
+            line=dict(
+                width=2,
+                color='rgb(31, 119, 180)'
+            ),
+            marker=dict(
+                size=8,
+                color='rgb(31, 119, 180)',
+                line=dict(width=2, color='white')
+            ),
+            hovertemplate="%{text}<extra></extra>"
+        ))
         
         # Update layout
         fig.update_layout(
-            title=f"{metric_name.replace('_', ' ').title()} vs Concurrency",
-            xaxis_title="Concurrency",
-            yaxis_title=f"{metric_name.replace('_', ' ').title()} ({unit})",
-            template="plotly_white",
-            showlegend=False,
-            # Add hover mode
-            hovermode='x unified',
-            # Add grid
-            xaxis=dict(
-                showgrid=True,
-                gridwidth=1,
-                gridcolor='LightGray',
-                tickmode='linear'
+            title=dict(
+                text=f"{metric_name.replace('_', ' ').title()} vs Concurrency",
+                x=0.5,
+                y=0.95,
+                xanchor='center',
+                yanchor='top',
+                font=dict(
+                    size=16,
+                    color='rgb(44, 44, 44)',
+                    family='bold Arial, Arial, sans-serif'
+                ),
+                pad=dict(t=30)
             ),
-            yaxis=dict(
+            xaxis=dict(
+                title="Concurrency Level",
                 showgrid=True,
                 gridwidth=1,
-                gridcolor='LightGray',
+                gridcolor='rgba(128, 128, 128, 0.2)',
                 zeroline=True,
                 zerolinewidth=1,
-                zerolinecolor='LightGray'
-            )
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                rangemode='tozero'
+            ),
+            yaxis=dict(
+                title=f"{metric_name.replace('_', ' ').title()} ({metric_unit})",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                rangemode='tozero'
+            ),
+            template="plotly_white",
+            showlegend=False,
+            hovermode='closest',
+            margin=dict(t=100, b=50, l=50, r=50),
+            plot_bgcolor='white'
         )
         
         return fig
@@ -424,69 +530,457 @@ class GenAIPerfVisualizer:
         run_data_dict: Dict[str, Dict],
         metric_name: str
     ) -> go.Figure:
-        """Create a line plot showing metric values over time for all concurrency levels."""
+        """Create a line plot showing metric values over time, colored by throughput."""
         fig = go.Figure()
         
-        # Sort runs by concurrency number
-        sorted_runs = sorted(
-            run_data_dict.keys(),
-            key=lambda x: int(x.split('concurrency')[1]) if 'concurrency' in x else 0
-        )
-        
-        # Color scale for different concurrency levels
-        colors = px.colors.qualitative.Set2
-        
-        for i, run_name in enumerate(sorted_runs):
+        # Collect and sort data by throughput
+        timeline_data = []
+        for run_name in run_data_dict:
             metric_data = run_data_dict[run_name].get(metric_name, {})
-            if not isinstance(metric_data, dict) or 'avg' not in metric_data:
-                continue
+            throughput_data = run_data_dict[run_name].get('request_throughput', {})
             
-            # Get statistics
-            mean = metric_data['avg']
-            std = metric_data.get('std', 0)
-            min_val = metric_data.get('min', mean - 2*std)
-            max_val = metric_data.get('max', mean + 2*std)
+            if (isinstance(metric_data, dict) and isinstance(throughput_data, dict) and
+                'avg' in metric_data and 'avg' in throughput_data):
+                
+                mean = metric_data['avg']
+                std = metric_data.get('std', 0)
+                min_val = metric_data.get('min', mean - 2*std)
+                max_val = metric_data.get('max', mean + 2*std)
+                throughput = throughput_data['avg']
+                
+                # Generate synthetic timeline data
+                n_points = 100
+                x = np.arange(n_points)
+                y = np.random.normal(mean, std/4, n_points)
+                y = np.clip(y, min_val, max_val)
+                
+                timeline_data.append((throughput, x, y))
+        
+        # Sort by throughput
+        timeline_data.sort(key=lambda x: x[0])
+        
+        if not timeline_data:
+            return None
+        
+        # Create color scale based on throughput range
+        min_throughput = min(data[0] for data in timeline_data)
+        max_throughput = max(data[0] for data in timeline_data)
+        
+        for throughput, x, y in timeline_data:
+            # Calculate color based on throughput
+            color_val = (throughput - min_throughput) / (max_throughput - min_throughput)
+            color = f'rgb({int(255*(1-color_val))}, {int(119*(1-color_val/2))}, {int(180)})'
             
-            # Generate synthetic timeline data
-            n_points = 100
-            x = np.arange(n_points)
-            y = np.random.normal(mean, std/4, n_points)
-            y = np.clip(y, min_val, max_val)
-            
-            # Extract concurrency number for legend
-            concurrency = int(run_name.split('concurrency')[1]) if 'concurrency' in run_name else 0
-            
-            # Add trace for this concurrency level
             fig.add_trace(go.Scatter(
                 x=x,
                 y=y,
                 mode='lines',
-                name=f'{concurrency}',
+                name=f'T:{throughput:.1f} req/s',
                 line=dict(
-                    color=colors[i % len(colors)],
+                    color=color,
                     width=2
+                ),
+                hovertemplate=(
+                    f"Time: %{{x}}<br>" +
+                    f"{metric_name}: %{{y:.2f}}<br>" +
+                    f"Throughput: {throughput:.2f} req/s<br>" +
+                    "<extra></extra>"
                 )
             ))
         
         # Get metric unit
-        unit = metric_data.get('unit', self.METRIC_UNITS.get(metric_name, ''))
+        unit = run_data_dict[list(run_data_dict.keys())[0]][metric_name].get('unit', self.METRIC_UNITS.get(metric_name, ''))
         
         # Update layout
         fig.update_layout(
-            title=f"{metric_name.replace('_', ' ').title()} Timeline Across Concurrency Levels",
-            xaxis_title="Sample Index",
-            yaxis_title=f"{metric_name.replace('_', ' ').title()} ({unit})",
+            title=dict(
+                text=f"{metric_name.replace('_', ' ').title()} Timeline by Throughput",
+                x=0.5,
+                y=0.98,  # Keep within valid range [0, 1]
+                xanchor='center',
+                yanchor='top',
+                font=dict(
+                    size=16,
+                    color='rgb(44, 44, 44)',
+                    family='bold Arial, Arial, sans-serif'
+                ),
+                pad=dict(t=30)
+            ),
+            xaxis=dict(
+                title="Time",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)'
+            ),
+            yaxis=dict(
+                title=f"{metric_name.replace('_', ' ').title()} ({unit})",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                rangemode='tozero'
+            ),
             template="plotly_white",
-            # Improve legend
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
-                y=1.02,
+                y=0.98,  # Keep within valid range [0, 1]
                 xanchor="right",
-                x=1
+                x=1,
+                font=dict(size=10)  # Smaller font for legend
             ),
-            # Add hover mode
-            hovermode='x unified'
+            hovermode='x unified',
+            margin=dict(t=150, b=50, l=50, r=50),  # Increased top margin further
+            plot_bgcolor='white'
+        )
+        
+        return fig
+
+    def create_model_comparison_plot(
+        self,
+        metrics_data: Dict[str, List[Dict]],
+        metric_name: str,
+        stat_param: str = "avg"
+    ) -> go.Figure:
+        """Create a plot comparing metric values across different models."""
+        print(f"Received model comparison data with {len(metrics_data)} models")  # Debug
+        
+        if not metrics_data:
+            print("No metrics data received")  # Debug
+            # Return empty figure if no data
+            fig = go.Figure()
+            fig.update_layout(
+                title="No data available for plotting",
+                xaxis_title="No Data",
+                yaxis_title="No Data"
+            )
+            return fig
+            
+        fig = go.Figure()
+        
+        # Get metric unit
+        first_model = list(metrics_data.keys())[0]
+        first_run = metrics_data[first_model][0] if metrics_data[first_model] else {}
+        metric_unit = first_run.get(metric_name, {}).get('unit', self.METRIC_UNITS.get(metric_name, ''))
+        
+        # Create traces for each model
+        for model_name, runs in metrics_data.items():
+            # Create shorter label for legend
+            if isinstance(model_name, str) and "TokenConfig" in model_name:
+                try:
+                    input_tokens = model_name.split("input_tokens=")[1].split(",")[0]
+                    output_tokens = model_name.split("output_tokens=")[1].split(",")[0]
+                    short_label = f"In:{input_tokens}, Out:{output_tokens}"
+                except:
+                    short_label = model_name
+            else:
+                short_label = model_name
+            
+            x_values = []  # metric values
+            y_values = []  # throughput values
+            hover_text = []  # hover information
+            
+            for run in runs:
+                metric_data = run.get(metric_name, {})
+                throughput_data = run.get('request_throughput', {})
+                
+                if isinstance(metric_data, dict) and isinstance(throughput_data, dict):
+                    metric_value = metric_data.get(stat_param)
+                    throughput = throughput_data.get('avg')  # Always use average for throughput
+                    
+                    if metric_value is not None and throughput is not None:
+                        x_values.append(metric_value)
+                        y_values.append(throughput)
+                        hover_text.append(
+                            f"{metric_name} ({stat_param}): {metric_value:.2f} {metric_unit}<br>" +
+                            f"Throughput: {throughput:.2f} req/s"
+                        )
+            
+            if x_values and y_values:
+                # Sort points by metric values for proper line connection
+                points = sorted(zip(x_values, y_values, hover_text))
+                x_values = [p[0] for p in points]
+                y_values = [p[1] for p in points]
+                hover_text = [p[2] for p in points]
+                
+                # Add line plot for this model
+                fig.add_trace(go.Scatter(
+                    x=x_values,
+                    y=y_values,
+                    mode='lines+markers',
+                    name=short_label,
+                    text=hover_text,
+                    line=dict(width=2),
+                    marker=dict(
+                        size=8,
+                        line=dict(width=2, color='white')
+                    ),
+                    hovertemplate="%{text}<extra></extra>"
+                ))
+        
+        # Check if any traces were added
+        if not fig.data:
+            print("No traces were added to the figure")  # Debug
+            fig.update_layout(
+                title="No valid data available for plotting",
+                xaxis_title="No Data",
+                yaxis_title="No Data"
+            )
+            return fig
+            
+        print(f"Created figure with {len(fig.data)} traces")  # Debug
+        
+        # Update layout
+        fig.update_layout(
+            title=dict(
+                text=f"{metric_name.replace('_', ' ').title()} vs Request Throughput ({stat_param})",
+                x=0.5,
+                y=0.98,
+                xanchor='center',
+                yanchor='top',
+                font=dict(
+                    size=16,
+                    color='rgb(44, 44, 44)',
+                    family='bold Arial, Arial, sans-serif'
+                ),
+                pad=dict(t=30)
+            ),
+            xaxis=dict(
+                title=f"{metric_name.replace('_', ' ').title()} ({metric_unit})",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                rangemode='tozero'
+            ),
+            yaxis=dict(
+                title="Request Throughput (req/s)",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                rangemode='tozero'
+            ),
+            template="plotly_white",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=0.98,
+                xanchor="right",
+                x=1,
+                font=dict(size=10)
+            ),
+            hovermode='closest',
+            margin=dict(t=150, b=50, l=50, r=50),
+            plot_bgcolor='white'
+        )
+        
+        return fig
+
+    def create_latency_distribution_comparison_plot(
+        self,
+        metrics_data: Dict[str, List[Dict]],
+        metric_name: str
+    ) -> go.Figure:
+        """Create a plot comparing latency distributions across different models."""
+        print(f"Creating latency distribution comparison plot for {metric_name}")
+        
+        if not metrics_data:
+            print("No metrics data received")
+            return None
+            
+        fig = go.Figure()
+        
+        # Get metric unit
+        first_model = list(metrics_data.keys())[0]
+        first_run = metrics_data[first_model][0] if metrics_data[first_model] else {}
+        metric_unit = first_run.get(metric_name, {}).get('unit', self.METRIC_UNITS.get(metric_name, ''))
+        
+        # Define colors for different models
+        colors = [
+            'rgb(31, 119, 180)',   # Blue
+            'rgb(255, 127, 14)',   # Orange
+            'rgb(44, 160, 44)',    # Green
+            'rgb(214, 39, 40)',    # Red
+            'rgb(148, 103, 189)',  # Purple
+            'rgb(140, 86, 75)',    # Brown
+            'rgb(227, 119, 194)',  # Pink
+            'rgb(127, 127, 127)'   # Gray
+        ]
+        
+        # Track min/max values for axis scaling
+        all_latencies = []
+        all_throughputs = []
+        
+        # Process each model
+        for model_idx, (model_name, runs) in enumerate(metrics_data.items()):
+            # Create shorter label for legend
+            if isinstance(model_name, str) and "TokenConfig" in model_name:
+                try:
+                    input_tokens = model_name.split("input_tokens=")[1].split(",")[0]
+                    output_tokens = model_name.split("output_tokens=")[1].split(",")[0]
+                    short_label = f"In:{input_tokens}, Out:{output_tokens}"
+                except:
+                    short_label = model_name
+            else:
+                short_label = model_name
+            
+            # Collect all latency values and throughputs for this model
+            latency_values = []
+            throughput_values = []
+            
+            for run in runs:
+                metric_data = run.get(metric_name, {})
+                throughput_data = run.get('request_throughput', {})
+                
+                if isinstance(metric_data, dict) and isinstance(throughput_data, dict):
+                    mean = metric_data.get('avg')
+                    p50 = metric_data.get('p50', mean)
+                    p25 = metric_data.get('p25', mean - (p50 - mean))
+                    p75 = metric_data.get('p75', mean + (mean - p50))
+                    p90 = metric_data.get('p90', p75 + (p75 - p25))
+                    p99 = metric_data.get('p99', p90 + (p90 - p75))
+                    min_val = metric_data.get('min', p25 - 1.5 * (p75 - p25))
+                    max_val = metric_data.get('max', p75 + 1.5 * (p75 - p25))
+                    throughput = throughput_data.get('avg')
+                    
+                    if all(v is not None for v in [mean, p50, p25, p75, p90, p99, min_val, max_val, throughput]):
+                        latency_values.extend([min_val, p25, p50, p75, max_val, mean, p90, p99])
+                        throughput_values.append(throughput)
+            
+            if latency_values and throughput_values:
+                # Calculate average throughput for this model
+                avg_throughput = np.mean(throughput_values)
+                
+                # Get color for this model
+                color = colors[model_idx % len(colors)]
+                # Create fill color with 0.1 opacity
+                fill_color = color.replace('rgb', 'rgba').replace(')', ', 0.1)')
+                
+                # Calculate statistics
+                min_val = min(latency_values)
+                max_val = max(latency_values)
+                q1 = np.percentile(latency_values, 25)
+                median = np.percentile(latency_values, 50)
+                q3 = np.percentile(latency_values, 75)
+                mean = np.mean(latency_values)
+                p90 = np.percentile(latency_values, 90)
+                p99 = np.percentile(latency_values, 99)
+                
+                # Add box plot
+                fig.add_trace(go.Box(
+                    x=[avg_throughput] * 5,
+                    y=[min_val, q1, median, q3, max_val],
+                    name=short_label,
+                    orientation='v',
+                    boxpoints=False,
+                    line=dict(color=color, width=2),
+                    fillcolor=fill_color,
+                    boxmean=True,
+                    whiskerwidth=0.7,
+                    showlegend=False
+                ))
+                
+                # Add mean marker with error bars
+                fig.add_trace(go.Scatter(
+                    x=[avg_throughput],
+                    y=[mean],
+                    mode='markers',
+                    name=short_label,
+                    marker=dict(
+                        symbol='line-ew',
+                        size=20,
+                        color=color,
+                        line=dict(width=2)
+                    ),
+                    error_y=dict(
+                        type='data',
+                        array=[q3 - q1],
+                        color=color,
+                        thickness=1,
+                        width=10
+                    ),
+                    showlegend=True,
+                    hovertemplate=(
+                        f"{short_label}<br>" +
+                        f"Mean: {mean:.2f}<br>" +
+                        f"IQR: [{q1:.2f}, {q3:.2f}]<br>" +
+                        f"P90: {p90:.2f}<br>" +
+                        f"P99: {p99:.2f}<br>" +
+                        f"Avg Throughput: {avg_throughput:.2f} req/s<br>" +
+                        "<extra></extra>"
+                    )
+                ))
+                
+                # Store values for axis scaling
+                all_latencies.extend(latency_values)
+                all_throughputs.append(avg_throughput)
+        
+        if not all_latencies or not all_throughputs:
+            return None
+        
+        # Calculate axis ranges with padding
+        x_min, x_max = min(all_throughputs), max(all_throughputs)
+        y_min, y_max = min(all_latencies), max(all_latencies)
+        x_padding = (x_max - x_min) * 0.1
+        y_padding = (y_max - y_min) * 0.1
+        
+        # Update layout
+        fig.update_layout(
+            title=dict(
+                text=f"{metric_name.replace('_', ' ').title()} Distribution Comparison",
+                x=0.5,
+                y=0.95,
+                xanchor='center',
+                yanchor='top',
+                font=dict(
+                    size=16,
+                    color='rgb(44, 44, 44)',
+                    family='bold Arial, Arial, sans-serif'
+                ),
+                pad=dict(t=30)
+            ),
+            xaxis=dict(
+                title="Request Throughput (req/s)",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                range=[x_min - x_padding, x_max + x_padding]
+            ),
+            yaxis=dict(
+                title=f"{metric_name.replace('_', ' ').title()} ({metric_unit})",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                range=[y_min - y_padding, y_max + y_padding]
+            ),
+            template="plotly_white",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=0.98,
+                xanchor="right",
+                x=1,
+                font=dict(size=10)
+            ),
+            hovermode='closest',
+            margin=dict(t=100, b=50, l=50, r=50),
+            plot_bgcolor='white'
         )
         
         return fig 

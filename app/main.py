@@ -312,17 +312,8 @@ def main():
                 help="Select the input/output token combination to analyze"
             )
             
-            # Run selection
-            selected_runs = st.multiselect(
-                "Select Concurrency Tests to Compare",
-                options=available_runs,
-                default=available_runs,
-                format_func=lambda x: f"Concurrency: {loader.parse_model_info(x, parent_folder=selected_config).concurrency}"
-            )
-            
-            if not selected_runs:
-                st.info("Please select at least one concurrency test to analyze.")
-                return
+            # Run selection - automatically select all runs
+            selected_runs = available_runs
             
             # Add an Analyze button
             if st.button("Analyze Selected Configuration"):
