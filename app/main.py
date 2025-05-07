@@ -282,7 +282,9 @@ def main():
                             if test_dir.is_dir():
                                 test_folders.append(test_dir.name)
                         if test_folders:
-                            config_groups[top_dir.name] = {
+                            # Use the full directory name as the key
+                            key = top_dir.name
+                            config_groups[key] = {
                                 'model_info': model_info,
                                 'test_folders': sorted(test_folders)
                             }
@@ -320,7 +322,7 @@ def main():
             
             # Get available token configurations from first run
             first_run = available_runs[0]
-            token_configs = loader.get_token_configs(first_run)
+            token_configs = loader.get_token_configs(first_run, parent_folder=selected_config)
             
             if not token_configs:
                 st.warning(
@@ -345,13 +347,24 @@ def main():
             # Add an Analyze button
             if st.button("Analyze Selected Configuration"):
                 with st.spinner("Loading and analyzing data..."):
+                    # Get the parent folder name from the selected config
+                    # Use the full directory name as the parent folder
+                    parent_folder = selected_config
+                    
                     # Load data for selected runs
-                    run_data = loader.load_multiple_runs(selected_runs, selected_token_config)
-                    metrics_data = loader.get_metrics_for_runs(selected_runs, selected_token_config)
+                    run_data = loader.load_multiple_runs(selected_runs, selected_token_config, parent_folder)
+                    metrics_data = loader.get_metrics_for_runs(selected_runs, selected_token_config, parent_folder)
+                    
+                    # Initialize session state if not exists
+                    if 'all_run_data' not in st.session_state:
+                        st.session_state.all_run_data = {}
+                    if 'all_metrics_data' not in st.session_state:
+                        st.session_state.all_metrics_data = {}
                     
                     # Store the loaded data and configuration in session state
-                    st.session_state.run_data = run_data
-                    st.session_state.metrics_data = metrics_data
+                    config_key = f"{selected_config}_{selected_token_config.input_tokens}_{selected_token_config.output_tokens}"
+                    st.session_state.all_run_data[config_key] = run_data
+                    st.session_state.all_metrics_data[config_key] = metrics_data
                     st.session_state.selected_runs = selected_runs
                     st.session_state.selected_token_config = selected_token_config
                     st.session_state.selected_config = selected_config
@@ -361,7 +374,7 @@ def main():
                     st.success("Data loaded and analyzed successfully!")
             
             # Only show additional data section if analysis has been run
-            if 'metrics_data' in st.session_state and selected_config == st.session_state.selected_config:
+            if 'all_metrics_data' in st.session_state:
                 st.markdown('<h2 class="section-header">Additional Data</h2>', unsafe_allow_html=True)
                 data_type = st.selectbox(
                     "Select Data to View",
@@ -372,29 +385,36 @@ def main():
                     ]
                 )
                 
-                if data_type == "Run Configurations":
-                    for run_name in st.session_state.selected_runs:
-                        model_info = loader.parse_model_info(run_name, parent_folder=selected_config)
-                        with st.expander(f"Configuration: {format_concurrency(model_info)}"):
-                            run_data_dict = st.session_state.run_data[run_name]
-                            _, config, _ = run_data_dict[st.session_state.selected_token_config]
-                            st.json(config)
-                elif data_type == "Raw Performance Data":
-                    for run_name in st.session_state.selected_runs:
-                        model_info = loader.parse_model_info(run_name, parent_folder=selected_config)
-                        with st.expander(f"Raw Data: {format_concurrency(model_info)}"):
-                            run_data_dict = st.session_state.run_data[run_name]
-                            _, _, raw_data = run_data_dict[st.session_state.selected_token_config]
-                            st.json(raw_data)
-                elif data_type == "Input Prompts":
-                    for run_name in st.session_state.selected_runs:
-                        model_info = loader.parse_model_info(run_name, parent_folder=selected_config)
-                        with st.expander(f"Inputs: {format_concurrency(model_info)}"):
-                            input_file = Path(data_dir) / run_name / 'inputs.json'
-                            if input_file.exists():
-                                with open(input_file, 'r') as f:
-                                    inputs = json.load(f)
-                                    st.json(inputs)
+                # Get current config key
+                current_config_key = f"{selected_config}_{selected_token_config.input_tokens}_{selected_token_config.output_tokens}"
+                
+                # Check if data exists for current configuration
+                if current_config_key not in st.session_state.all_metrics_data:
+                    st.warning(f"No data available for the current configuration. Please click 'Analyze Selected Configuration' to load the data.")
+                else:
+                    if data_type == "Run Configurations":
+                        for run_name in st.session_state.selected_runs:
+                            model_info = loader.parse_model_info(run_name, parent_folder=selected_config)
+                            with st.expander(f"Configuration: {format_concurrency(model_info)}"):
+                                run_data_dict = st.session_state.all_run_data[current_config_key][run_name]
+                                _, config, _ = run_data_dict[st.session_state.selected_token_config]
+                                st.json(config)
+                    elif data_type == "Raw Performance Data":
+                        for run_name in st.session_state.selected_runs:
+                            model_info = loader.parse_model_info(run_name, parent_folder=selected_config)
+                            with st.expander(f"Raw Data: {format_concurrency(model_info)}"):
+                                run_data_dict = st.session_state.all_run_data[current_config_key][run_name]
+                                _, _, raw_data = run_data_dict[st.session_state.selected_token_config]
+                                st.json(raw_data)
+                    elif data_type == "Input Prompts":
+                        for run_name in st.session_state.selected_runs:
+                            model_info = loader.parse_model_info(run_name, parent_folder=selected_config)
+                            with st.expander(f"Inputs: {format_concurrency(model_info)}"):
+                                input_file = Path(data_dir) / run_name / 'inputs.json'
+                                if input_file.exists():
+                                    with open(input_file, 'r') as f:
+                                        inputs = json.load(f)
+                                        st.json(inputs)
         
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
@@ -403,70 +423,74 @@ def main():
             return
     
     # Main content area with metrics
-    # Only show metrics if data has been loaded AND the selected configuration matches
-    if ('metrics_data' in st.session_state and 
-        'selected_config' in st.session_state and 
-        selected_config == st.session_state.selected_config):
-        
+    # Only show metrics if data has been loaded
+    if 'all_metrics_data' in st.session_state:
         # Initialize visualizer
         visualizer = GenAIPerfVisualizer()
         
-        # Create two columns for the metrics
-        col1, col2 = st.columns(2)
+        # Get current config key
+        current_config_key = f"{selected_config}_{selected_token_config.input_tokens}_{selected_token_config.output_tokens}"
         
-        # Latency Metrics Column
-        with col1:
-            st.markdown('<h2 class="section-header">Latency Metrics</h2>', unsafe_allow_html=True)
-            metric_tabs = st.tabs(['Request Latency', 'Time to First Token', 'Inter Token Latency'])
+        # Check if data exists for current configuration
+        if current_config_key not in st.session_state.all_metrics_data:
+            st.warning(f"No data available for the current configuration. Please click 'Analyze Selected Configuration' to load the data.")
+        else:
+            # Create two columns for the metrics
+            col1, col2 = st.columns(2)
             
-            for tab, metric in zip(metric_tabs, ['request_latency', 'time_to_first_token', 'inter_token_latency']):
-                with tab:
-                    plot_type = st.selectbox(
-                        "Select Plot Type",
-                        options=["Metric Comparison", "Latency Distribution", "Metric Timeline"],
-                        key=f"{metric}_plot_type"
-                    )
-                    
-                    # Only create plot when plot type is selected
-                    if plot_type:
-                        st.markdown(f'<div class="plot-container">', unsafe_allow_html=True)
-                        if plot_type == "Metric Comparison":
-                            fig = visualizer.create_metric_comparison_plot(st.session_state.metrics_data, metric)
-                        elif plot_type == "Latency Distribution":
-                            fig = visualizer.create_latency_distribution_plot(st.session_state.metrics_data, metric)
-                        else:  # Metric Timeline
-                            fig = visualizer.create_metric_timeline_plot(st.session_state.metrics_data, metric)
+            # Latency Metrics Column
+            with col1:
+                st.markdown('<h2 class="section-header">Latency Metrics</h2>', unsafe_allow_html=True)
+                metric_tabs = st.tabs(['Request Latency', 'Time to First Token', 'Inter Token Latency'])
+                
+                for tab, metric in zip(metric_tabs, ['request_latency', 'time_to_first_token', 'inter_token_latency']):
+                    with tab:
+                        plot_type = st.selectbox(
+                            "Select Plot Type",
+                            options=["Metric Comparison", "Latency Distribution", "Metric Timeline"],
+                            key=f"{metric}_plot_type"
+                        )
                         
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Throughput Metrics Column
-        with col2:
-            st.markdown('<h2 class="section-header">Throughput Metrics</h2>', unsafe_allow_html=True)
-            metric_tabs = st.tabs(['Request Throughput', 'Output Token Throughput', 'Output Token Throughput Per Request'])
+                        # Only create plot when plot type is selected
+                        if plot_type:
+                            st.markdown(f'<div class="plot-container">', unsafe_allow_html=True)
+                            if plot_type == "Metric Comparison":
+                                fig = visualizer.create_metric_comparison_plot(st.session_state.all_metrics_data[current_config_key], metric)
+                            elif plot_type == "Latency Distribution":
+                                fig = visualizer.create_latency_distribution_plot(st.session_state.all_metrics_data[current_config_key], metric)
+                            else:  # Metric Timeline
+                                fig = visualizer.create_metric_timeline_plot(st.session_state.all_metrics_data[current_config_key], metric)
+                            
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
             
-            for tab, metric in zip(metric_tabs, ['request_throughput', 'output_token_throughput', 'output_token_throughput_per_request']):
-                with tab:
-                    plot_type = st.selectbox(
-                        "Select Plot Type",
-                        options=["Metric Comparison", "Throughput vs Concurrency", "Metric Timeline"],
-                        key=f"{metric}_plot_type"
-                    )
-                    
-                    # Only create plot when plot type is selected
-                    if plot_type:
-                        st.markdown(f'<div class="plot-container">', unsafe_allow_html=True)
-                        if plot_type == "Metric Comparison":
-                            fig = visualizer.create_metric_comparison_plot(st.session_state.metrics_data, metric)
-                        elif plot_type == "Throughput vs Concurrency":
-                            fig = visualizer.create_throughput_over_concurrency_plot(st.session_state.metrics_data, metric)
-                        else:  # Metric Timeline
-                            fig = visualizer.create_metric_timeline_plot(st.session_state.metrics_data, metric)
+            # Throughput Metrics Column
+            with col2:
+                st.markdown('<h2 class="section-header">Throughput Metrics</h2>', unsafe_allow_html=True)
+                metric_tabs = st.tabs(['Request Throughput', 'Output Token Throughput', 'Output Token Throughput Per Request'])
+                
+                for tab, metric in zip(metric_tabs, ['request_throughput', 'output_token_throughput', 'output_token_throughput_per_request']):
+                    with tab:
+                        plot_type = st.selectbox(
+                            "Select Plot Type",
+                            options=["Metric Comparison", "Throughput vs Concurrency", "Metric Timeline"],
+                            key=f"{metric}_plot_type"
+                        )
                         
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        # Only create plot when plot type is selected
+                        if plot_type:
+                            st.markdown(f'<div class="plot-container">', unsafe_allow_html=True)
+                            if plot_type == "Metric Comparison":
+                                fig = visualizer.create_metric_comparison_plot(st.session_state.all_metrics_data[current_config_key], metric)
+                            elif plot_type == "Throughput vs Concurrency":
+                                fig = visualizer.create_throughput_over_concurrency_plot(st.session_state.all_metrics_data[current_config_key], metric)
+                            else:  # Metric Timeline
+                                fig = visualizer.create_metric_timeline_plot(st.session_state.all_metrics_data[current_config_key], metric)
+                            
+                            if fig:
+                                st.plotly_chart(fig, use_container_width=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main() 

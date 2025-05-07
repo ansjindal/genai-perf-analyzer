@@ -243,7 +243,7 @@ def main():
                         model_metrics = []  # List to store metrics from all runs
                         # Load data from all runs
                         for run in config_groups[model]['test_folders']:
-                            run_data = loader.get_metrics_for_runs([run], selected_token_config)
+                            run_data = loader.get_metrics_for_runs([run], selected_token_config, parent_folder=model)
                             if run_data and run in run_data:
                                 # Extract concurrency level from run name
                                 concurrency = None
@@ -279,23 +279,23 @@ def main():
                         st.markdown('<h3>Latency Metrics</h3>', unsafe_allow_html=True)
                         latency_tabs = st.tabs(['Request Latency', 'Time to First Token', 'Inter Token Latency'])
                         
-                        for tab, metric in zip(latency_tabs, ['request_latency', 'time_to_first_token', 'inter_token_latency']):
+                        for i, (tab, metric) in enumerate(zip(latency_tabs, ['request_latency', 'time_to_first_token', 'inter_token_latency'])):
                             with tab:
-                                # Distribution plot
-                                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
-                                fig = st.session_state.visualizer.create_latency_distribution_comparison_plot(
-                                    st.session_state.metrics_data,
-                                    metric
-                                )
-                                if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
-                                st.markdown('</div>', unsafe_allow_html=True)
+                                # st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                                # fig = st.session_state.visualizer.create_latency_distribution_comparison_plot(
+                                #     st.session_state.metrics_data,
+                                #     metric
+                                # )
+                                # if fig:
+                                #     st.plotly_chart(fig, use_container_width=True)
+                                # st.markdown('</div>', unsafe_allow_html=True)
                                 
                                 # Metric comparison plot
                                 st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                                 fig = st.session_state.visualizer.create_model_comparison_plot(
                                     st.session_state.metrics_data,
-                                    metric
+                                    metric,
+                                    stat_param="avg",
                                 )
                                 if fig:
                                     st.plotly_chart(fig, use_container_width=True)
@@ -308,21 +308,22 @@ def main():
                         
                         for tab, metric in zip(throughput_tabs, ['request_throughput', 'output_token_throughput', 'output_token_throughput_per_request']):
                             with tab:
-                                # Distribution plot
-                                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
-                                fig = st.session_state.visualizer.create_latency_distribution_comparison_plot(
-                                    st.session_state.metrics_data,
-                                    metric
-                                )
-                                if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
-                                st.markdown('</div>', unsafe_allow_html=True)
+                                # Comment out the throughput distribution plot
+                                # st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                                # fig = st.session_state.visualizer.create_throughput_distribution_comparison_plot(
+                                #     st.session_state.metrics_data,
+                                #     metric
+                                # )
+                                # if fig:
+                                #     st.plotly_chart(fig, use_container_width=True)
+                                # st.markdown('</div>', unsafe_allow_html=True)
                                 
-                                # Metric comparison plot
+                                # Metric comparison plot with model name in legend
                                 st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                                 fig = st.session_state.visualizer.create_model_comparison_plot(
                                     st.session_state.metrics_data,
-                                    metric
+                                    metric,
+                                    stat_param="avg"
                                 )
                                 if fig:
                                     st.plotly_chart(fig, use_container_width=True)
@@ -375,7 +376,7 @@ def main():
                         config_metrics = []  # List to store metrics from all runs
                         # Load data from all runs
                         for run in config_groups[selected_model]['test_folders']:
-                            run_data = loader.get_metrics_for_runs([run], token_config)
+                            run_data = loader.get_metrics_for_runs([run], token_config, parent_folder=selected_model)
                             if run_data and run in run_data:
                                 # Extract concurrency level from run name
                                 concurrency = None
@@ -413,23 +414,23 @@ def main():
                         st.markdown('<h3>Latency Metrics</h3>', unsafe_allow_html=True)
                         latency_tabs = st.tabs(['Request Latency', 'Time to First Token', 'Inter Token Latency'])
                         
-                        for tab, metric in zip(latency_tabs, ['request_latency', 'time_to_first_token', 'inter_token_latency']):
+                        for i, (tab, metric) in enumerate(zip(latency_tabs, ['request_latency', 'time_to_first_token', 'inter_token_latency'])):
                             with tab:
-                                # Distribution plot
-                                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
-                                fig = st.session_state.visualizer.create_latency_distribution_comparison_plot(
-                                    st.session_state.metrics_data,
-                                    metric
-                                )
-                                if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
-                                st.markdown('</div>', unsafe_allow_html=True)
+                                # st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                                # fig = st.session_state.visualizer.create_latency_distribution_comparison_plot(
+                                #     st.session_state.metrics_data,
+                                #     metric
+                                # )
+                                # if fig:
+                                #     st.plotly_chart(fig, use_container_width=True)
+                                # st.markdown('</div>', unsafe_allow_html=True)
                                 
                                 # Metric comparison plot
                                 st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                                 fig = st.session_state.visualizer.create_model_comparison_plot(
                                     st.session_state.metrics_data,
-                                    metric
+                                    metric,
+                                    stat_param="avg"
                                 )
                                 if fig:
                                     st.plotly_chart(fig, use_container_width=True)
@@ -442,21 +443,22 @@ def main():
                         
                         for tab, metric in zip(throughput_tabs, ['request_throughput', 'output_token_throughput', 'output_token_throughput_per_request']):
                             with tab:
-                                # Distribution plot
-                                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
-                                fig = st.session_state.visualizer.create_latency_distribution_comparison_plot(
-                                    st.session_state.metrics_data,
-                                    metric
-                                )
-                                if fig:
-                                    st.plotly_chart(fig, use_container_width=True)
-                                st.markdown('</div>', unsafe_allow_html=True)
+                                # Comment out the throughput distribution plot
+                                # st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                                # fig = st.session_state.visualizer.create_throughput_distribution_comparison_plot(
+                                #     st.session_state.metrics_data,
+                                #     metric
+                                # )
+                                # if fig:
+                                #     st.plotly_chart(fig, use_container_width=True)
+                                # st.markdown('</div>', unsafe_allow_html=True)
                                 
-                                # Metric comparison plot
+                                # Metric comparison plot with model name in legend
                                 st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                                 fig = st.session_state.visualizer.create_model_comparison_plot(
                                     st.session_state.metrics_data,
-                                    metric
+                                    metric,
+                                    stat_param="avg"
                                 )
                                 if fig:
                                     st.plotly_chart(fig, use_container_width=True)

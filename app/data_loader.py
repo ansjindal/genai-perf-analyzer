@@ -221,14 +221,14 @@ class GenAIPerfDataLoader:
             self.parse_model_info(x, parent_folder=None).concurrency or 0
         ))
 
-    def get_token_configs(self, run_folder: str) -> set:
+    def get_token_configs(self, run_folder: str, parent_folder: str = None) -> set:
         """Get all token configurations from a run folder."""
         configs = set()
         
         # Find the actual path by looking in all top-level directories
-        run_path = self.get_run_path(run_folder)
+        run_path = self.get_run_path(run_folder, parent_folder)
         if not run_path:
-            print(f"Warning: Run folder '{run_folder}' not found")
+            print(f"Warning: Run folder '{run_folder}' not found in {parent_folder if parent_folder else 'any directory'}")
             return configs
         
         # Look for both CSV and JSON files
@@ -252,13 +252,20 @@ class GenAIPerfDataLoader:
                     return top_dir.name
         return None
 
-    def get_run_path(self, run_folder: str) -> Optional[Path]:
+    def get_run_path(self, run_folder: str, parent_folder: str = None) -> Optional[Path]:
         """Find the full path to a run folder."""
-        for top_dir in self.base_path.iterdir():
-            if top_dir.is_dir():
-                test_path = top_dir / run_folder
-                if test_path.exists():
-                    return test_path
+        if parent_folder:
+            # If parent folder is provided, look directly in that folder
+            test_path = self.base_path / parent_folder / run_folder
+            if test_path.exists():
+                return test_path
+        else:
+            # Otherwise search in all top-level directories
+            for top_dir in self.base_path.iterdir():
+                if top_dir.is_dir():
+                    test_path = top_dir / run_folder
+                    if test_path.exists():
+                        return test_path
         return None
 
     def group_test_configs(self) -> Dict[str, Dict]:
@@ -311,17 +318,14 @@ class GenAIPerfDataLoader:
         print(f"Error: Could not read {file_path} with any supported encoding")
         return {}
 
-    def load_run_data(self, run_folder: str, token_config: Optional[TokenConfig] = None) -> Dict[TokenConfig, Tuple[Dict, Dict, Dict]]:
+    def load_run_data(self, run_folder: str, token_config: Optional[TokenConfig] = None, parent_folder: str = None) -> Dict[TokenConfig, Tuple[Dict, Dict, Dict]]:
         """Load data for a specific test run."""
-        run_path = self.get_run_path(run_folder)
+        run_path = self.get_run_path(run_folder, parent_folder)
         if not run_path:
-            print(f"Warning: Test run folder '{run_folder}' not found")
+            print(f"Warning: Test run folder '{run_folder}' not found in {parent_folder if parent_folder else 'any directory'}")
             raise FileNotFoundError(f"Test run folder '{run_folder}' not found")
         
         print(f"Loading data from run path: {run_path}")
-        
-        parent_folder = self.get_parent_folder(run_folder)
-        print(f"Parent folder: {parent_folder}")
         
         results = {}
         
@@ -330,7 +334,7 @@ class GenAIPerfDataLoader:
             configs_to_load = [token_config]
             print(f"Using specified token config: {token_config}")
         else:
-            configs_to_load = self.get_token_configs(run_folder)
+            configs_to_load = self.get_token_configs(run_folder, parent_folder)
             print(f"Found token configs: {configs_to_load}")
         
         for config in configs_to_load:
@@ -406,35 +410,37 @@ class GenAIPerfDataLoader:
         
         return results
 
-    def load_multiple_runs(self, run_folders: List[str], token_config: Optional[TokenConfig] = None) -> Dict[str, Dict[TokenConfig, Tuple[Dict, Dict, Dict]]]:
+    def load_multiple_runs(self, run_folders: List[str], token_config: Optional[TokenConfig] = None, parent_folder: str = None) -> Dict[str, Dict[TokenConfig, Tuple[Dict, Dict, Dict]]]:
         """Load data for multiple test runs.
         
         Args:
             run_folders: List of run directory names to load
             token_config: Optional specific token configuration to load
+            parent_folder: Optional parent folder containing the runs
             
         Returns:
             Dictionary mapping run names to their data dictionaries
         """
         return {
-            run_folder: self.load_run_data(run_folder, token_config)
+            run_folder: self.load_run_data(run_folder, token_config, parent_folder)
             for run_folder in run_folders
         }
 
-    def get_metrics_for_runs(self, run_folders: List[str], token_config: Optional[TokenConfig] = None) -> Dict[str, Dict[str, Dict]]:
+    def get_metrics_for_runs(self, run_folders: List[str], token_config: Optional[TokenConfig] = None, parent_folder: str = None) -> Dict[str, Dict[str, Dict]]:
         """Get all metrics for specified runs."""
         metrics = {}
         print(f"\nCalculating metrics for runs: {run_folders}")
         print(f"Looking for metrics: {self.METRICS}")
         print(f"Using token config: {token_config}")
+        print(f"Using parent folder: {parent_folder}")
         
         for run_folder in run_folders:
             print(f"\nProcessing run: {run_folder}")
             try:
                 # Get the full path to the run folder
-                run_path = self.get_run_path(run_folder)
+                run_path = self.get_run_path(run_folder, parent_folder)
                 if not run_path:
-                    print(f"Warning: Run folder '{run_folder}' not found")
+                    print(f"Warning: Run folder '{run_folder}' not found in {parent_folder if parent_folder else 'any directory'}")
                     continue
                     
                 # Check for file formats

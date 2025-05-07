@@ -181,18 +181,15 @@ class GenAIPerfVisualizer:
         metrics_data: Dict[str, Dict[str, Dict]],
         metric_name: str
     ) -> go.Figure:
-        """Create box plots showing latency distribution against request throughput."""
+        """Create horizontal box plots showing latency distribution with throughput on y-axis."""
         # Collect all latency values and corresponding throughputs
         latency_values = []
         throughput = None
-        
         for run_name in metrics_data:
             metric_data = metrics_data[run_name].get(metric_name, {})
             throughput_data = metrics_data[run_name].get('request_throughput', {})
-            
             if (isinstance(metric_data, dict) and isinstance(throughput_data, dict) and
                 'avg' in metric_data and 'avg' in throughput_data):
-                
                 # Get statistics
                 mean = metric_data['avg']
                 p50 = metric_data.get('p50', mean)
@@ -202,25 +199,19 @@ class GenAIPerfVisualizer:
                 p99 = metric_data.get('p99', p90 + (p90 - p75))
                 min_val = metric_data.get('min', p25 - 1.5 * (p75 - p25))
                 max_val = metric_data.get('max', p75 + 1.5 * (p75 - p25))
-                
                 # Store all statistics
                 latency_values.extend([min_val, p25, p50, p75, max_val, mean, p90, p99])
-                
                 # Store average throughput
                 if throughput is None:
                     throughput = throughput_data['avg']
-        
         if not latency_values:
             return None
-        
         # Create figure
         fig = go.Figure()
-        
         # Define colors
         box_color = 'rgb(31, 119, 180)'
         outlier_color = 'rgba(31, 119, 180, 0.6)'
-        mean_color = 'rgb(214, 39, 40)'  # Red for mean line
-        
+        mean_color = 'rgb(214, 39, 40)'
         # Calculate statistics for the box plot
         min_val = min(latency_values)
         max_val = max(latency_values)
@@ -230,33 +221,30 @@ class GenAIPerfVisualizer:
         mean = np.mean(latency_values)
         p90 = np.percentile(latency_values, 90)
         p99 = np.percentile(latency_values, 99)
-        
-        # Add box plot
+        # Add horizontal box plot (metric on x, throughput on y)
         fig.add_trace(go.Box(
-            x=[throughput] * 5,
-            y=[min_val, q1, median, q3, max_val],
+            y=[throughput] * 5,
+            x=[min_val, q1, median, q3, max_val],
             name='Distribution',
-            orientation='v',
+            orientation='h',
             boxpoints=False,
             line=dict(color=box_color, width=2),
             fillcolor='rgba(31, 119, 180, 0.1)',
-            boxmean=True,
             whiskerwidth=0.7
         ))
-        
         # Add mean marker with error bars
         fig.add_trace(go.Scatter(
-            x=[throughput],
-            y=[mean],
+            y=[throughput],
+            x=[mean],
             mode='markers',
             name='Mean',
             marker=dict(
-                symbol='line-ew',  # Horizontal line symbol
+                symbol='line-ns',  # Vertical line symbol
                 size=20,
                 color=mean_color,
                 line=dict(width=2)
             ),
-            error_y=dict(
+            error_x=dict(
                 type='data',
                 array=[q3 - q1],  # IQR as error
                 color=mean_color,
@@ -271,11 +259,10 @@ class GenAIPerfVisualizer:
                 "<extra></extra>"
             )
         ))
-        
         # Add percentile markers
         fig.add_trace(go.Scatter(
-            x=[throughput],
-            y=[p90],
+            y=[throughput],
+            x=[p90],
             mode='markers',
             name='P90',
             marker=dict(
@@ -291,10 +278,9 @@ class GenAIPerfVisualizer:
                 "<extra></extra>"
             )
         ))
-        
         fig.add_trace(go.Scatter(
-            x=[throughput],
-            y=[p99],
+            y=[throughput],
+            x=[p99],
             mode='markers',
             name='P99',
             marker=dict(
@@ -310,14 +296,11 @@ class GenAIPerfVisualizer:
                 "<extra></extra>"
             )
         ))
-        
         # Get metric unit
         unit = metrics_data[list(metrics_data.keys())[0]][metric_name].get('unit', self.METRIC_UNITS.get(metric_name, ''))
-        
         # Calculate axis ranges with padding
-        y_padding = (max_val - min_val) * 0.1
-        x_padding = throughput * 0.1
-        
+        x_padding = (max_val - min_val) * 0.1
+        y_padding = throughput * 0.1 if throughput else 1
         # Update layout
         fig.update_layout(
             title=dict(
@@ -334,16 +317,6 @@ class GenAIPerfVisualizer:
                 pad=dict(t=30)
             ),
             xaxis=dict(
-                title="Request Throughput (req/s)",
-                showgrid=True,
-                gridwidth=1,
-                gridcolor='rgba(128, 128, 128, 0.2)',
-                zeroline=True,
-                zerolinewidth=1,
-                zerolinecolor='rgba(128, 128, 128, 0.2)',
-                range=[throughput - x_padding, throughput + x_padding]
-            ),
-            yaxis=dict(
                 title=f"{metric_name.replace('_', ' ').title()} ({unit})",
                 showgrid=True,
                 gridwidth=1,
@@ -351,7 +324,17 @@ class GenAIPerfVisualizer:
                 zeroline=True,
                 zerolinewidth=1,
                 zerolinecolor='rgba(128, 128, 128, 0.2)',
-                range=[min_val - y_padding, max_val + y_padding]
+                range=[min_val - x_padding, max_val + x_padding]
+            ),
+            yaxis=dict(
+                title="Request Throughput (req/s)",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                range=[throughput - y_padding, throughput + y_padding] if throughput else None
             ),
             template="plotly_white",
             showlegend=False,
@@ -359,48 +342,6 @@ class GenAIPerfVisualizer:
             margin=dict(t=100, b=50, l=50, r=50),
             plot_bgcolor='white'
         )
-        
-        # Add legend items
-        legend_items = [
-            ('Mean ± IQR', mean_color, 'line-ew', 20),
-            ('Box (Q1-Q3)', box_color, 'square', 10),
-            ('P90', outlier_color, 'diamond', 10),
-            ('P99', outlier_color, 'star', 12)
-        ]
-        
-        # Calculate legend position
-        legend_x = throughput - x_padding/2
-        legend_spacing = y_padding/2
-        
-        for i, (label, color, symbol, size) in enumerate(legend_items):
-            y_pos = max_val + (i - len(legend_items)/2) * legend_spacing
-            
-            # Add marker
-            fig.add_trace(go.Scatter(
-                x=[legend_x],
-                y=[y_pos],
-                mode='markers',
-                marker=dict(
-                    symbol=symbol,
-                    size=size,
-                    color=color,
-                    line=dict(color=box_color if label != 'Mean ± IQR' else color, width=1)
-                ),
-                showlegend=False,
-                hoverinfo='none'
-            ))
-            
-            # Add label
-            fig.add_annotation(
-                x=legend_x + x_padding/2,
-                y=y_pos,
-                text=label,
-                showarrow=False,
-                xanchor='left',
-                yanchor='middle',
-                font=dict(size=12)
-            )
-        
         return fig
     
     def create_throughput_over_concurrency_plot(
@@ -680,25 +621,24 @@ class GenAIPerfVisualizer:
                         if part.lower() in ['aws', 'gcp', 'azure']:
                             cloud_idx = i
                             break
-                    
                     if cloud_idx != -1:
                         profile_parts = '_'.join(parts[cloud_idx + 3:]).split('-')
                         engine = profile_parts[0]
                         gpu_config = '-'.join(profile_parts[1:3])
                         parallelism = '-'.join(p for p in profile_parts[3:-1] if p.startswith(('tp', 'pp')))
-                        
-                        # Create abbreviated label
                         engine_short = 'TRT' if engine == 'tensorrt_llm' else engine.upper()
                         gpu_short = gpu_config.split('-')[0].upper()
                         precision = gpu_config.split('-')[1].upper()
                         parallel = parallelism.upper()
-                        short_label = f"{engine_short}-{gpu_short}-{precision}-{parallel}"
+                        profile_label = f"{engine_short}-{gpu_short}-{precision}-{parallel}"
+                        legend_label = f"{model_name.split('_')[0]}-{model_name.split('_')[1]} | {profile_label} | {profile_parts[-1]} "
+
                     else:
-                        short_label = model_name
+                        legend_label = model_name
                 except:
-                    short_label = model_name
+                    legend_label = model_name
             else:
-                short_label = str(model_name)
+                legend_label = str(model_name)
             
             x_values = []  # metric values
             y_values = []  # throughput values
@@ -733,7 +673,7 @@ class GenAIPerfVisualizer:
                     x=x_values,
                     y=y_values,
                     mode='lines+markers',
-                    name=short_label,
+                    name=legend_label,
                     text=hover_text,
                     line=dict(width=2),
                     marker=dict(
@@ -781,10 +721,10 @@ class GenAIPerfVisualizer:
             template="plotly_white",
             legend=dict(
                 orientation="h",
-                yanchor="bottom",
-                y=0.98,
-                xanchor="right",
-                x=1,
+                yanchor="top",
+                y=-0.4,
+                xanchor="center",
+                x=0.5,
                 font=dict(size=10)
             ),
             hovermode='closest',
@@ -799,20 +739,16 @@ class GenAIPerfVisualizer:
         metrics_data: Dict[str, List[Dict]],
         metric_name: str
     ) -> go.Figure:
-        """Create a plot comparing latency distributions across different models."""
+        """Create horizontal box plots comparing latency distributions across different models/configs."""
         print(f"Creating latency distribution comparison plot for {metric_name}")
-        
         if not metrics_data:
             print("No metrics data received")
             return None
-            
         fig = go.Figure()
-        
         # Get metric unit
         first_model = list(metrics_data.keys())[0]
         first_run = metrics_data[first_model][0] if metrics_data[first_model] else {}
         metric_unit = first_run.get(metric_name, {}).get('unit', self.METRIC_UNITS.get(metric_name, ''))
-        
         # Define colors for different models
         colors = [
             'rgb(31, 119, 180)',   # Blue
@@ -824,31 +760,25 @@ class GenAIPerfVisualizer:
             'rgb(227, 119, 194)',  # Pink
             'rgb(127, 127, 127)'   # Gray
         ]
-        
         # Track min/max values for axis scaling
         all_latencies = []
         all_throughputs = []
-        
         # Process each model
         for model_idx, (model_name, runs) in enumerate(metrics_data.items()):
             # Create shorter label for legend
             if isinstance(model_name, str):
                 try:
-                    # Parse model profile from the name
                     parts = model_name.split('_')
                     cloud_idx = -1
                     for i, part in enumerate(parts):
                         if part.lower() in ['aws', 'gcp', 'azure']:
                             cloud_idx = i
                             break
-                    
                     if cloud_idx != -1:
                         profile_parts = '_'.join(parts[cloud_idx + 3:]).split('-')
                         engine = profile_parts[0]
                         gpu_config = '-'.join(profile_parts[1:3])
                         parallelism = '-'.join(p for p in profile_parts[3:-1] if p.startswith(('tp', 'pp')))
-                        
-                        # Create abbreviated label
                         engine_short = 'TRT' if engine == 'tensorrt_llm' else engine.upper()
                         gpu_short = gpu_config.split('-')[0].upper()
                         precision = gpu_config.split('-')[1].upper()
@@ -860,15 +790,12 @@ class GenAIPerfVisualizer:
                     short_label = model_name
             else:
                 short_label = str(model_name)
-            
             # Collect all latency values and throughputs for this model
             latency_values = []
             throughput_values = []
-            
             for run in runs:
                 metric_data = run.get(metric_name, {})
                 throughput_data = run.get('request_throughput', {})
-                
                 if isinstance(metric_data, dict) and isinstance(throughput_data, dict):
                     mean = metric_data.get('avg')
                     p50 = metric_data.get('p50', mean)
@@ -879,21 +806,14 @@ class GenAIPerfVisualizer:
                     min_val = metric_data.get('min', p25 - 1.5 * (p75 - p25))
                     max_val = metric_data.get('max', p75 + 1.5 * (p75 - p25))
                     throughput = throughput_data.get('avg')
-                    
                     if all(v is not None for v in [mean, p50, p25, p75, p90, p99, min_val, max_val, throughput]):
                         latency_values.extend([min_val, p25, p50, p75, max_val, mean, p90, p99])
                         throughput_values.append(throughput)
-            
             if latency_values and throughput_values:
                 # Calculate average throughput for this model
                 avg_throughput = np.mean(throughput_values)
-                
-                # Get color for this model
                 color = colors[model_idx % len(colors)]
-                # Create fill color with 0.1 opacity
                 fill_color = color.replace('rgb', 'rgba').replace(')', ', 0.1)')
-                
-                # Calculate statistics
                 min_val = min(latency_values)
                 max_val = max(latency_values)
                 q1 = np.percentile(latency_values, 25)
@@ -902,34 +822,31 @@ class GenAIPerfVisualizer:
                 mean = np.mean(latency_values)
                 p90 = np.percentile(latency_values, 90)
                 p99 = np.percentile(latency_values, 99)
-                
-                # Add box plot
+                # Add horizontal box plot (metric on x, throughput on y)
                 fig.add_trace(go.Box(
-                    x=[avg_throughput] * 5,
-                    y=[min_val, q1, median, q3, max_val],
+                    y=[short_label] * 5,
+                    x=[min_val, q1, median, q3, max_val],
                     name=short_label,
-                    orientation='v',
+                    orientation='h',
                     boxpoints=False,
                     line=dict(color=color, width=2),
                     fillcolor=fill_color,
-                    boxmean=True,
                     whiskerwidth=0.7,
                     showlegend=False
                 ))
-                
                 # Add mean marker with error bars
                 fig.add_trace(go.Scatter(
-                    x=[avg_throughput],
-                    y=[mean],
+                    y=[short_label],
+                    x=[mean],
                     mode='markers',
                     name=short_label,
                     marker=dict(
-                        symbol='line-ew',
+                        symbol='line-ns',
                         size=20,
                         color=color,
                         line=dict(width=2)
                     ),
-                    error_y=dict(
+                    error_x=dict(
                         type='data',
                         array=[q3 - q1],
                         color=color,
@@ -947,20 +864,13 @@ class GenAIPerfVisualizer:
                         "<extra></extra>"
                     )
                 ))
-                
-                # Store values for axis scaling
                 all_latencies.extend(latency_values)
-                all_throughputs.append(avg_throughput)
-        
+                all_throughputs.append(short_label)
         if not all_latencies or not all_throughputs:
             return None
-        
         # Calculate axis ranges with padding
-        x_min, x_max = min(all_throughputs), max(all_throughputs)
-        y_min, y_max = min(all_latencies), max(all_latencies)
+        x_min, x_max = min(all_latencies), max(all_latencies)
         x_padding = (x_max - x_min) * 0.1
-        y_padding = (y_max - y_min) * 0.1
-        
         # Update layout
         fig.update_layout(
             title=dict(
@@ -977,7 +887,7 @@ class GenAIPerfVisualizer:
                 pad=dict(t=30)
             ),
             xaxis=dict(
-                title="Request Throughput (req/s)",
+                title=f"{metric_name.replace('_', ' ').title()} ({metric_unit})",
                 showgrid=True,
                 gridwidth=1,
                 gridcolor='rgba(128, 128, 128, 0.2)',
@@ -987,14 +897,14 @@ class GenAIPerfVisualizer:
                 range=[x_min - x_padding, x_max + x_padding]
             ),
             yaxis=dict(
-                title=f"{metric_name.replace('_', ' ').title()} ({metric_unit})",
+                title="Model/Config",
+                type="category",
                 showgrid=True,
                 gridwidth=1,
                 gridcolor='rgba(128, 128, 128, 0.2)',
                 zeroline=True,
                 zerolinewidth=1,
-                zerolinecolor='rgba(128, 128, 128, 0.2)',
-                range=[y_min - y_padding, y_max + y_padding]
+                zerolinecolor='rgba(128, 128, 128, 0.2)'
             ),
             template="plotly_white",
             legend=dict(
@@ -1009,5 +919,213 @@ class GenAIPerfVisualizer:
             margin=dict(t=100, b=50, l=50, r=50),
             plot_bgcolor='white'
         )
-        
+        return fig 
+
+    def create_throughput_distribution_comparison_plot(
+        self,
+        metrics_data: Dict[str, List[Dict]],
+        metric_name: str = "request_throughput"
+    ) -> go.Figure:
+        """Create horizontal box plots comparing throughput distributions across different models/configs."""
+        fig = go.Figure()
+        colors = [
+            'rgb(31, 119, 180)',   # Blue
+            'rgb(255, 127, 14)',   # Orange
+            'rgb(44, 160, 44)',    # Green
+            'rgb(214, 39, 40)',    # Red
+            'rgb(148, 103, 189)',  # Purple
+            'rgb(140, 86, 75)',    # Brown
+            'rgb(227, 119, 194)',  # Pink
+            'rgb(127, 127, 127)'   # Gray
+        ]
+        all_throughputs = []
+        for model_idx, (model_name, runs) in enumerate(metrics_data.items()):
+            # Create shorter label for legend
+            if isinstance(model_name, str):
+                try:
+                    parts = model_name.split('_')
+                    cloud_idx = -1
+                    for i, part in enumerate(parts):
+                        if part.lower() in ['aws', 'gcp', 'azure']:
+                            cloud_idx = i
+                            break
+                    if cloud_idx != -1:
+                        profile_parts = '_'.join(parts[cloud_idx + 3:]).split('-')
+                        engine = profile_parts[0]
+                        gpu_config = '-'.join(profile_parts[1:3])
+                        parallelism = '-'.join(p for p in profile_parts[3:-1] if p.startswith(('tp', 'pp')))
+                        engine_short = 'TRT' if engine == 'tensorrt_llm' else engine.upper()
+                        gpu_short = gpu_config.split('-')[0].upper()
+                        precision = gpu_config.split('-')[1].upper()
+                        parallel = parallelism.upper()
+                        short_label = f"{engine_short}-{gpu_short}-{precision}-{parallel}"
+                    else:
+                        short_label = model_name
+                except:
+                    short_label = model_name
+            else:
+                short_label = str(model_name)
+            throughput_values = []
+            for run in runs:
+                throughput_data = run.get(metric_name, {})
+                if isinstance(throughput_data, dict):
+                    for stat in ['avg', 'p50', 'p90', 'p95', 'p99', 'min', 'max']:
+                        val = throughput_data.get(stat)
+                        if val is not None:
+                            throughput_values.append(val)
+            if throughput_values:
+                color = colors[model_idx % len(colors)]
+                fill_color = color.replace('rgb', 'rgba').replace(')', ', 0.1)')
+                fig.add_trace(go.Box(
+                    y=[short_label] * len(throughput_values),
+                    x=throughput_values,
+                    name=short_label,
+                    orientation='h',
+                    boxpoints=False,
+                    line=dict(color=color, width=2),
+                    fillcolor=fill_color,
+                    whiskerwidth=0.7,
+                    showlegend=False
+                ))
+                all_throughputs.extend(throughput_values)
+        if not all_throughputs:
+            return None
+        x_min, x_max = min(all_throughputs), max(all_throughputs)
+        x_padding = (x_max - x_min) * 0.1
+        fig.update_layout(
+            title=dict(
+                text="Request Throughput Distribution Comparison",
+                x=0.5,
+                y=0.95,
+                xanchor='center',
+                yanchor='top',
+                font=dict(
+                    size=16,
+                    color='rgb(44, 44, 44)',
+                    family='bold Arial, Arial, sans-serif'
+                ),
+                pad=dict(t=30)
+            ),
+            xaxis=dict(
+                title="Request Throughput (requests/sec)",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)',
+                range=[x_min - x_padding, x_max + x_padding]
+            ),
+            yaxis=dict(
+                title="Model/Config",
+                type="category",
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='rgba(128, 128, 128, 0.2)',
+                zeroline=True,
+                zerolinewidth=1,
+                zerolinecolor='rgba(128, 128, 128, 0.2)'
+            ),
+            template="plotly_white",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=0.98,
+                xanchor="right",
+                x=1,
+                font=dict(size=10)
+            ),
+            hovermode='closest',
+            margin=dict(t=100, b=50, l=50, r=50),
+            plot_bgcolor='white'
+        )
+        return fig 
+
+    def create_latency_vs_throughput_scatter_plot(
+        self,
+        metrics_data: Dict[str, List[Dict]],
+        latency_metric: str = "request_latency",
+        throughput_metric: str = "request_throughput",
+        stat: str = "avg"
+    ) -> go.Figure:
+        """Create a scatter plot with latency on x-axis and throughput on y-axis for each model/config."""
+        fig = go.Figure()
+        colors = [
+            'rgb(31, 119, 180)',   # Blue
+            'rgb(255, 127, 14)',   # Orange
+            'rgb(44, 160, 44)',    # Green
+            'rgb(214, 39, 40)',    # Red
+            'rgb(148, 103, 189)',  # Purple
+            'rgb(140, 86, 75)',    # Brown
+            'rgb(227, 119, 194)',  # Pink
+            'rgb(127, 127, 127)'   # Gray
+        ]
+        for model_idx, (model_name, runs) in enumerate(metrics_data.items()):
+            # Create shorter label for legend
+            if isinstance(model_name, str):
+                try:
+                    parts = model_name.split('_')
+                    cloud_idx = -1
+                    for i, part in enumerate(parts):
+                        if part.lower() in ['aws', 'gcp', 'azure']:
+                            cloud_idx = i
+                            break
+                    if cloud_idx != -1:
+                        profile_parts = '_'.join(parts[cloud_idx + 3:]).split('-')
+                        engine = profile_parts[0]
+                        gpu_config = '-'.join(profile_parts[1:3])
+                        parallelism = '-'.join(p for p in profile_parts[3:-1] if p.startswith(('tp', 'pp')))
+                        engine_short = 'TRT' if engine == 'tensorrt_llm' else engine.upper()
+                        gpu_short = gpu_config.split('-')[0].upper()
+                        precision = gpu_config.split('-')[1].upper()
+                        parallel = parallelism.upper()
+                        short_label = f"{engine_short}-{gpu_short}-{precision}-{parallel}"
+                    else:
+                        short_label = model_name
+                except:
+                    short_label = model_name
+            else:
+                short_label = str(model_name)
+            x_vals = []
+            y_vals = []
+            hover_texts = []
+            for run in runs:
+                latency_data = run.get(latency_metric, {})
+                throughput_data = run.get(throughput_metric, {})
+                if isinstance(latency_data, dict) and isinstance(throughput_data, dict):
+                    latency_val = latency_data.get(stat)
+                    throughput_val = throughput_data.get(stat)
+                    if latency_val is not None and throughput_val is not None:
+                        x_vals.append(latency_val)
+                        y_vals.append(throughput_val)
+                        hover_texts.append(f"{short_label}<br>Latency: {latency_val:.2f} ms<br>Throughput: {throughput_val:.2f} req/s")
+            if x_vals and y_vals:
+                color = colors[model_idx % len(colors)]
+                fig.add_trace(go.Scatter(
+                    x=x_vals,
+                    y=y_vals,
+                    mode='markers+lines',
+                    name=short_label,
+                    marker=dict(size=10, color=color),
+                    line=dict(color=color, width=2, dash='dot'),
+                    text=hover_texts,
+                    hovertemplate="%{text}<extra></extra>"
+                ))
+        fig.update_layout(
+            title="Latency vs Throughput (per config)",
+            xaxis_title="Latency (ms)",
+            yaxis_title="Throughput (requests/sec)",
+            template="plotly_white",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=0.98,
+                xanchor="right",
+                x=1,
+                font=dict(size=10)
+            ),
+            hovermode='closest',
+            margin=dict(t=100, b=50, l=50, r=50),
+            plot_bgcolor='white'
+        )
         return fig 
