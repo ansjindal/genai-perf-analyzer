@@ -609,8 +609,22 @@ class GenAIPerfVisualizer:
         first_run = metrics_data[first_model][0] if metrics_data[first_model] else {}
         metric_unit = first_run.get(metric_name, {}).get('unit', self.METRIC_UNITS.get(metric_name, ''))
         
+        # Darker colorblind-friendly palette
+        colorblind_palette = [
+            '#B35C00',  # dark orange
+            '#1C5BA6',  # dark blue
+            '#00725C',  # dark green
+            '#B3A800',  # dark yellow
+            '#003366',  # navy blue
+            '#A63200',  # dark vermillion
+            '#7B1F5B',  # dark purple
+            '#222222',  # dark gray/black
+        ]
+        marker_symbols = [
+            'circle', 'square', 'diamond', 'cross', 'x', 'triangle-up', 'triangle-down', 'star'
+        ]
         # Create traces for each model
-        for model_name, runs in metrics_data.items():
+        for model_idx, (model_name, runs) in enumerate(metrics_data.items()):
             # Create shorter label for legend
             if isinstance(model_name, str):
                 try:
@@ -656,29 +670,26 @@ class GenAIPerfVisualizer:
                         x_values.append(metric_value)
                         y_values.append(throughput)
                         hover_text.append(
-                            f"Model: {model_name}<br>" +
-                            f"{metric_name} ({stat_param}): {metric_value:.2f} {metric_unit}<br>" +
+                            f"{legend_label}<br>"
+                            f"{metric_name} ({stat_param}): {metric_value:.2f} {metric_unit}<br>"
                             f"Throughput: {throughput:.2f} req/s"
                         )
             
             if x_values and y_values:
-                # Sort points by metric values for proper line connection
-                points = sorted(zip(x_values, y_values, hover_text))
-                x_values = [p[0] for p in points]
-                y_values = [p[1] for p in points]
-                hover_text = [p[2] for p in points]
-                
-                # Add line plot for this model
+                color = colorblind_palette[model_idx % len(colorblind_palette)]
+                marker_symbol = marker_symbols[model_idx % len(marker_symbols)]
                 fig.add_trace(go.Scatter(
                     x=x_values,
                     y=y_values,
                     mode='lines+markers',
                     name=legend_label,
                     text=hover_text,
-                    line=dict(width=2),
+                    line=dict(width=2, color=color, dash='dot'),
                     marker=dict(
-                        size=8,
-                        line=dict(width=2, color='white')
+                        size=7,
+                        line=dict(width=1, color='white'),
+                        color=color,
+                        symbol=marker_symbol
                     ),
                     hovertemplate="%{text}<extra></extra>"
                 ))
@@ -692,7 +703,7 @@ class GenAIPerfVisualizer:
                 xanchor='center',
                 yanchor='top',
                 font=dict(
-                    size=16,
+                    size=20,
                     color='rgb(44, 44, 44)',
                     family='bold Arial, Arial, sans-serif'
                 ),
@@ -706,7 +717,9 @@ class GenAIPerfVisualizer:
                 zeroline=True,
                 zerolinewidth=1,
                 zerolinecolor='rgba(128, 128, 128, 0.2)',
-                rangemode='tozero'
+                rangemode='tozero',
+                titlefont=dict(size=18),
+                tickfont=dict(size=16)
             ),
             yaxis=dict(
                 title="Request Throughput (req/s)",
@@ -716,20 +729,27 @@ class GenAIPerfVisualizer:
                 zeroline=True,
                 zerolinewidth=1,
                 zerolinecolor='rgba(128, 128, 128, 0.2)',
-                rangemode='tozero'
+                rangemode='tozero',
+                titlefont=dict(size=18),
+                tickfont=dict(size=16)
             ),
             template="plotly_white",
             legend=dict(
                 orientation="h",
                 yanchor="top",
-                y=-0.4,
+                y=-0.2,
                 xanchor="center",
                 x=0.5,
-                font=dict(size=10)
+                font=dict(size=14),
+                itemwidth=100,
+                valign="top"
             ),
             hovermode='closest',
-            margin=dict(t=100, b=50, l=50, r=50),
-            plot_bgcolor='white'
+            width=1200,
+            height=700,
+            margin=dict(t=120, b=120, l=80, r=80),
+            plot_bgcolor='white',
+            font=dict(size=16)
         )
         
         return fig
@@ -1106,7 +1126,7 @@ class GenAIPerfVisualizer:
                     y=y_vals,
                     mode='markers+lines',
                     name=short_label,
-                    marker=dict(size=10, color=color),
+                    marker=dict(size=7, color=color, line=dict(width=2, color='white')),
                     line=dict(color=color, width=2, dash='dot'),
                     text=hover_texts,
                     hovertemplate="%{text}<extra></extra>"
